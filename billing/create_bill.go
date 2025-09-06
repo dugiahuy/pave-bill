@@ -14,7 +14,7 @@ import (
 )
 
 //encore:api public path=/v1/bills method=POST tag:idempotency
-func (s *Billing) CreateBill(ctx context.Context, req *CreateBillRequest) (*CreateBillResponse, error) {
+func (s *Service) CreateBill(ctx context.Context, req *CreateBillRequest) (*CreateBillResponse, error) {
 	if req.StartTime.IsZero() {
 		req.StartTime = time.Now()
 	}

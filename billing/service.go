@@ -3,7 +3,6 @@ package billing
 import (
 	"encore.app/billing/service"
 	"encore.app/billing/store"
-	"encore.dev/rlog"
 	"encore.dev/storage/sqldb"
 )
 
@@ -12,20 +11,16 @@ var paveBillDB = sqldb.NewDatabase("pave_bill", sqldb.DatabaseConfig{
 })
 
 //encore:service
-type Billing struct {
+type Service struct {
 	services service.Services
 }
 
-func initService() (*Billing, error) {
+func initService() (*Service, error) {
 	pgxdb := sqldb.Driver(paveBillDB)
-
-	rlog.Info("Initializing Store", "pgxdb", pgxdb)
 	repo := store.NewStore(pgxdb)
-
-	rlog.Info("Initializing Store", "repo", repo)
 	services := service.NewServices(repo)
 
-	return &Billing{
+	return &Service{
 		services: services,
 	}, nil
 }
