@@ -2,11 +2,13 @@ package bill
 
 import (
 	"context"
+	"errors"
 
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"encore.dev/beta/errs"
-	"encore.dev/rlog"
 
 	"encore.app/billing/model"
 	"encore.app/billing/store/bills"
@@ -14,19 +16,22 @@ import (
 
 // Create handles the business logic for creating a new bill with explicit idempotency
 func (s *service) Create(ctx context.Context, bill *model.Bill) (*model.Bill, error) {
-	rlog.Info("Creating bill in service1", "bill", bill)
-
-	r := bills.CreateBillParams{
+	dbBill, err := s.billRepo.CreateBill(ctx, bills.CreateBillParams{
 		Status:         string(model.BillStatusPending),
 		Currency:       bill.Currency,
 		StartTime:      pgtype.Timestamptz{Time: bill.StartTime, Valid: true},
 		EndTime:        pgtype.Timestamptz{Time: bill.EndTime, Valid: true},
 		IdempotencyKey: bill.IdempotencyKey,
-	}
-	rlog.Info("Creating bill in service2", "params", r)
-
-	dbBill, err := s.billRepo.CreateBill(ctx, r)
+	})
 	if err != nil {
+		var e *pgconn.PgError
+		if errors.As(err, &e) && e.Code == pgerrcode.UniqueViolation {
+			return nil, &errs.Error{
+				Code:    errs.AlreadyExists,
+				Message: "bill is duplicated",
+			}
+		}
+
 		return nil, &errs.Error{
 			Code:    errs.Internal,
 			Message: "failed to create bill",

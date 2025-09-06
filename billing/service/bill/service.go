@@ -5,7 +5,6 @@ import (
 
 	"encore.app/billing/model"
 	"encore.app/billing/store/bills"
-	"encore.dev/rlog"
 )
 
 type Service interface {
@@ -19,7 +18,6 @@ type service struct {
 
 // NewBillService creates a new bill service
 func NewBillService(billRepo bills.Querier) Service {
-	rlog.Info("Initializing Bill Service", "billRepo", billRepo)
 	return &service{
 		billRepo: billRepo,
 	}

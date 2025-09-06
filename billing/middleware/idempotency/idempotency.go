@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"time"
 
 	"encore.dev/beta/errs"
@@ -113,7 +114,8 @@ func handleExistingEntry(req middleware.Request, next middleware.Next, entry mod
 	case "completed":
 		return handleCompletedEntry(req, next, entry, idempotencyKey)
 	default:
-		return handleUnknownStatus(req, next, entry, idempotencyKey)
+		rlog.Warn("Unknown cache entry status, processing as new request", "key", idempotencyKey, "status", entry.Status)
+		return next(req)
 	}
 }
 
@@ -142,24 +144,27 @@ func handleProcessingEntry(idempotencyKey string) middleware.Response {
 // handleCompletedEntry handles returning cached responses
 func handleCompletedEntry(req middleware.Request, next middleware.Next, entry model.IdempotencyCacheEntry, idempotencyKey string) middleware.Response {
 	if len(entry.Response) > 0 {
-		var cachedResponse middleware.Response
-		err := json.Unmarshal(entry.Response, &cachedResponse)
-		if err == nil {
-			rlog.Info("Returning cached response", "key", idempotencyKey)
-			return cachedResponse
+		rlog.Info("Returning cached response", "key", idempotencyKey)
+
+		// Get the response type from the API metadata
+		responseType := req.Data().API.ResponseType
+		if responseType != nil {
+			// Create a new instance of the response type
+			responseValue := reflect.New(responseType.Elem()).Interface()
+
+			// Unmarshal the cached JSON into the correct type
+			err := json.Unmarshal(entry.Response, responseValue)
+			if err == nil {
+				return middleware.Response{
+					Payload: responseValue,
+				}
+			}
+			rlog.Error("Failed to unmarshal cached response into correct type", "error", err)
 		}
-		rlog.Error("Failed to unmarshal cached response", "error", err)
 	}
 
 	// Fallback: if cached response is corrupted, treat as new request
 	rlog.Warn("Cached response corrupted, processing as new request", "key", idempotencyKey)
-	return next(req)
-}
-
-// handleUnknownStatus handles unknown cache entry statuses
-func handleUnknownStatus(req middleware.Request, next middleware.Next, entry model.IdempotencyCacheEntry, idempotencyKey string) middleware.Response {
-	rlog.Warn("Unknown cache entry status, processing as new request",
-		"key", idempotencyKey, "status", entry.Status)
 	return next(req)
 }
 
@@ -193,17 +198,21 @@ func markAsCompleted(ctx context.Context, cacheKey model.IdempotencyKey, bodyHas
 		UpdatedAt:       time.Now(),
 	}
 
-	responseBytes, err := json.Marshal(response)
-	if err != nil {
-		rlog.Error("Failed to marshal response for caching", "error", err)
-		return
+	// Only cache the payload as JSON, not the entire middleware.Response
+	if response.Payload != nil {
+		payloadBytes, err := json.Marshal(response.Payload)
+		if err != nil {
+			rlog.Error("Failed to marshal response payload for caching", "error", err)
+			return
+		}
+		completedEntry.Response = payloadBytes
 	}
-
-	completedEntry.Response = responseBytes
 
 	if setErr := IdempotencyCache.Set(ctx, cacheKey, completedEntry); setErr != nil {
 		rlog.Error("Failed to cache successful response", "error", setErr)
 	}
+
+	rlog.Debug("Request completed and response cached", "key", idempotencyKey)
 }
 
 // hashing creates a stable hash of the JSON request body
