@@ -26,16 +26,10 @@ func (s *service) Create(ctx context.Context, bill *model.Bill) (*model.Bill, er
 	if err != nil {
 		var e *pgconn.PgError
 		if errors.As(err, &e) && e.Code == pgerrcode.UniqueViolation {
-			return nil, &errs.Error{
-				Code:    errs.AlreadyExists,
-				Message: "bill is duplicated",
-			}
+			return nil, &errs.Error{Code: errs.AlreadyExists, Message: "bill is duplicated"}
 		}
 
-		return nil, &errs.Error{
-			Code:    errs.Internal,
-			Message: "failed to create bill",
-		}
+		return nil, &errs.Error{Code: errs.Internal, Message: "failed to create bill"}
 	}
 
 	return &model.Bill{

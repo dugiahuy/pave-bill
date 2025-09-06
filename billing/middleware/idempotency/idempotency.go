@@ -57,10 +57,7 @@ func IdempotencyMiddleware(req middleware.Request, next middleware.Next) middlew
 		}
 
 		return middleware.Response{
-			Err: &errs.Error{
-				Code:    errs.Internal,
-				Message: "Failed to check idempotency",
-			},
+			Err: &errs.Error{Code: errs.Internal, Message: "Failed to check idempotency"},
 		}
 	}
 
@@ -78,10 +75,7 @@ func extractIdempotencyKey(req middleware.Request) (string, *errs.Error) {
 	}
 
 	if len(idempotencyKey) == 0 {
-		return "", &errs.Error{
-			Code:    errs.InvalidArgument,
-			Message: "X-Idempotency-Key header is required",
-		}
+		return "", &errs.Error{Code: errs.InvalidArgument, Message: "X-Idempotency-Key header is required"}
 	}
 
 	return idempotencyKey, nil
@@ -122,10 +116,7 @@ func handleExistingEntry(req middleware.Request, next middleware.Next, entry mod
 // validateBodyHash checks for conflicts in request body hash
 func validateBodyHash(entry model.IdempotencyCacheEntry, bodyHash string) *errs.Error {
 	if bodyHash != "" && entry.RequestBodyHash != "" && bodyHash != entry.RequestBodyHash {
-		return &errs.Error{
-			Code:    errs.InvalidArgument,
-			Message: "idempotency key conflict: request body does not match previous request",
-		}
+		return &errs.Error{Code: errs.InvalidArgument, Message: "idempotency key conflict: request body does not match previous request"}
 	}
 	return nil
 }
@@ -134,10 +125,7 @@ func validateBodyHash(entry model.IdempotencyCacheEntry, bodyHash string) *errs.
 func handleProcessingEntry(idempotencyKey string) middleware.Response {
 	rlog.Info("Concurrent request detected", "key", idempotencyKey)
 	return middleware.Response{
-		Err: &errs.Error{
-			Code:    errs.Aborted,
-			Message: "Request is already being processed.",
-		},
+		Err: &errs.Error{Code: errs.Aborted, Message: "Request is already being processed."},
 	}
 }
 
@@ -155,16 +143,13 @@ func handleCompletedEntry(req middleware.Request, next middleware.Next, entry mo
 			// Unmarshal the cached JSON into the correct type
 			err := json.Unmarshal(entry.Response, responseValue)
 			if err == nil {
-				return middleware.Response{
-					Payload: responseValue,
-				}
+				return middleware.Response{Payload: responseValue}
 			}
-			rlog.Error("Failed to unmarshal cached response into correct type", "error", err)
+			rlog.Error("Failed to unmarshal cached response into correct type", "error", err, "key", idempotencyKey)
 		}
 	}
 
 	// Fallback: if cached response is corrupted, treat as new request
-	rlog.Warn("Cached response corrupted, processing as new request", "key", idempotencyKey)
 	return next(req)
 }
 
@@ -175,10 +160,7 @@ func markAsProcessing(ctx context.Context, cacheKey model.IdempotencyKey) *errs.
 		CreatedAt: time.Now(),
 	}); err != nil {
 		rlog.Error("Failed to mark request as processing", "error", err)
-		return &errs.Error{
-			Code:    errs.Internal,
-			Message: "Failed to mark request as processing",
-		}
+		return &errs.Error{Code: errs.Internal, Message: "Failed to mark request as processing"}
 	}
 	return nil
 }

@@ -63,32 +63,20 @@ var validate = validator.New()
 // Validate implements validation for CreateBillRequest using go-playground/validator
 func (r *CreateBillRequest) Validate() error {
 	if err := validate.Struct(r); err != nil {
-		return &errs.Error{
-			Code:    errs.InvalidArgument,
-			Message: err.Error(),
-		}
+		return &errs.Error{Code: errs.InvalidArgument, Message: err.Error()}
 	}
 
 	if !r.StartTime.IsZero() {
 		if r.StartTime.Before(time.Now()) {
-			return &errs.Error{
-				Code:    errs.InvalidArgument,
-				Message: "start_time must be in the future",
-			}
+			return &errs.Error{Code: errs.InvalidArgument, Message: "start_time must be in the future"}
 		}
 
 		if r.EndTime.Before(time.Now()) {
-			return &errs.Error{
-				Code:    errs.InvalidArgument,
-				Message: "end_time must be in the future",
-			}
+			return &errs.Error{Code: errs.InvalidArgument, Message: "end_time must be in the future"}
 		}
 	} else {
 		if r.EndTime.Before(r.StartTime) {
-			return &errs.Error{
-				Code:    errs.InvalidArgument,
-				Message: "end_time must be after start_time",
-			}
+			return &errs.Error{Code: errs.InvalidArgument, Message: "end_time must be after start_time"}
 		}
 	}
 
