@@ -1,0 +1,218 @@
+package idempotency
+
+import (
+	"context"
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"time"
+
+	"encore.dev/beta/errs"
+	"encore.dev/middleware"
+	"encore.dev/rlog"
+	"encore.dev/storage/cache"
+
+	"encore.app/billing/model"
+)
+
+var (
+	IDEMPOTENCY_HEADER = "X-Idempotency-Key"
+)
+
+//encore:middleware target=tag:idempotency
+func IdempotencyMiddleware(req middleware.Request, next middleware.Next) middleware.Response {
+	idempotencyKey, err := extractIdempotencyKey(req)
+	if err != nil {
+		return middleware.Response{Err: err}
+	}
+
+	bodyHash := generateBodyHash(req)
+
+	// Create cache key
+	cacheKey := model.IdempotencyKey{
+		Resource: req.Data().Path,
+		Key:      idempotencyKey,
+	}
+
+	// Check existing cache entry
+	entry, cacheErr := IdempotencyCache.Get(req.Context(), cacheKey)
+	if cacheErr != nil {
+		// Handle cache miss - process new request
+		if errors.Is(cacheErr, cache.Miss) {
+			if err := markAsProcessing(req.Context(), cacheKey); err != nil {
+				return middleware.Response{Err: err}
+			}
+
+			response := next(req)
+
+			if response.Err != nil {
+				deleteCacheEntry(req.Context(), cacheKey, idempotencyKey)
+			} else {
+				markAsCompleted(req.Context(), cacheKey, bodyHash, idempotencyKey, response)
+			}
+
+			return response
+		}
+
+		return middleware.Response{
+			Err: &errs.Error{
+				Code:    errs.Internal,
+				Message: "Failed to check idempotency",
+			},
+		}
+	}
+
+	// Handle existing cache entry
+	return handleExistingEntry(req, next, entry, bodyHash, idempotencyKey)
+}
+
+// extractIdempotencyKey extracts and validates the idempotency key from headers
+func extractIdempotencyKey(req middleware.Request) (string, *errs.Error) {
+	var idempotencyKey string
+	if headers := req.Data().Headers; headers != nil {
+		if headerVal := headers.Get(IDEMPOTENCY_HEADER); headerVal != "" {
+			idempotencyKey = headerVal
+		}
+	}
+
+	if len(idempotencyKey) == 0 {
+		return "", &errs.Error{
+			Code:    errs.InvalidArgument,
+			Message: "X-Idempotency-Key header is required",
+		}
+	}
+
+	return idempotencyKey, nil
+}
+
+// generateBodyHash creates a hash of the request body for conflict detection
+func generateBodyHash(req middleware.Request) string {
+	var bodyHash string
+	if payload := req.Data().Payload; payload != nil {
+		if bodyBytes, err := json.Marshal(payload); err != nil {
+			rlog.Error("Failed to marshal request body", "error", err)
+		} else {
+			bodyHash = hashing(bodyBytes)
+		}
+	}
+	return bodyHash
+}
+
+// handleExistingEntry handles cases where a cache entry already exists
+func handleExistingEntry(req middleware.Request, next middleware.Next, entry model.IdempotencyCacheEntry, bodyHash, idempotencyKey string) middleware.Response {
+	// Validate body hash for conflict detection
+	if err := validateBodyHash(entry, bodyHash); err != nil {
+		return middleware.Response{Err: err}
+	}
+
+	// Handle entry based on status
+	switch entry.Status {
+	case "processing":
+		return handleProcessingEntry(idempotencyKey)
+	case "completed":
+		return handleCompletedEntry(req, next, entry, idempotencyKey)
+	default:
+		return handleUnknownStatus(req, next, entry, idempotencyKey)
+	}
+}
+
+// validateBodyHash checks for conflicts in request body hash
+func validateBodyHash(entry model.IdempotencyCacheEntry, bodyHash string) *errs.Error {
+	if bodyHash != "" && entry.RequestBodyHash != "" && bodyHash != entry.RequestBodyHash {
+		return &errs.Error{
+			Code:    errs.InvalidArgument,
+			Message: "idempotency key conflict: request body does not match previous request",
+		}
+	}
+	return nil
+}
+
+// handleProcessingEntry handles concurrent request detection
+func handleProcessingEntry(idempotencyKey string) middleware.Response {
+	rlog.Info("Concurrent request detected", "key", idempotencyKey)
+	return middleware.Response{
+		Err: &errs.Error{
+			Code:    errs.Aborted,
+			Message: "Request is already being processed.",
+		},
+	}
+}
+
+// handleCompletedEntry handles returning cached responses
+func handleCompletedEntry(req middleware.Request, next middleware.Next, entry model.IdempotencyCacheEntry, idempotencyKey string) middleware.Response {
+	if len(entry.Response) > 0 {
+		var cachedResponse middleware.Response
+		err := json.Unmarshal(entry.Response, &cachedResponse)
+		if err == nil {
+			rlog.Info("Returning cached response", "key", idempotencyKey)
+			return cachedResponse
+		}
+		rlog.Error("Failed to unmarshal cached response", "error", err)
+	}
+
+	// Fallback: if cached response is corrupted, treat as new request
+	rlog.Warn("Cached response corrupted, processing as new request", "key", idempotencyKey)
+	return next(req)
+}
+
+// handleUnknownStatus handles unknown cache entry statuses
+func handleUnknownStatus(req middleware.Request, next middleware.Next, entry model.IdempotencyCacheEntry, idempotencyKey string) middleware.Response {
+	rlog.Warn("Unknown cache entry status, processing as new request",
+		"key", idempotencyKey, "status", entry.Status)
+	return next(req)
+}
+
+// markAsProcessing marks a request as currently being processed
+func markAsProcessing(ctx context.Context, cacheKey model.IdempotencyKey) *errs.Error {
+	if err := IdempotencyCache.Set(ctx, cacheKey, model.IdempotencyCacheEntry{
+		Status:    "processing",
+		CreatedAt: time.Now(),
+	}); err != nil {
+		rlog.Error("Failed to mark request as processing", "error", err)
+		return &errs.Error{
+			Code:    errs.Internal,
+			Message: "Failed to mark request as processing",
+		}
+	}
+	return nil
+}
+
+// deleteCacheEntry removes processing entry to allow retry
+func deleteCacheEntry(ctx context.Context, cacheKey model.IdempotencyKey, idempotencyKey string) {
+	if _, deleteErr := IdempotencyCache.Delete(ctx, cacheKey); deleteErr != nil {
+		rlog.Error("Failed to clear failed request from cache", "error", deleteErr)
+	}
+}
+
+// markAsCompleted caches the successful response
+func markAsCompleted(ctx context.Context, cacheKey model.IdempotencyKey, bodyHash, idempotencyKey string, response middleware.Response) {
+	completedEntry := model.IdempotencyCacheEntry{
+		Status:          "completed",
+		RequestBodyHash: bodyHash,
+		UpdatedAt:       time.Now(),
+	}
+
+	responseBytes, err := json.Marshal(response)
+	if err != nil {
+		rlog.Error("Failed to marshal response for caching", "error", err)
+		return
+	}
+
+	completedEntry.Response = responseBytes
+
+	if setErr := IdempotencyCache.Set(ctx, cacheKey, completedEntry); setErr != nil {
+		rlog.Error("Failed to cache successful response", "error", setErr)
+	}
+}
+
+// hashing creates a stable hash of the JSON request body
+func hashing(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+
+	hash := md5.New()
+	hash.Write(body)
+	return hex.EncodeToString(hash.Sum(nil))
+}

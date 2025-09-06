@@ -17,6 +17,17 @@ Create a local app from this template:
 encore app create my-app-name --example=hello-world
 ```
 
+## Generate SQL queries
+Install sqlc:
+```bash
+brew install sqlc
+```
+
+Run this command from your application's root folder:
+```bash
+sqlc generate -f ./billing/db/sqlc.yaml
+```
+
 ## Run app locally
 
 Run this command from your application's root folder:

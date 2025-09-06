@@ -1,0 +1,23 @@
+version: "2"
+sql:
+  # Bills queries
+  - engine: "postgresql"
+    queries: "billing/db/queries/bills.sql"
+    schema: "billing/db/migrations"
+    gen:
+      go:
+        package: bills
+        out: billing/store/bills
+        sql_package: "pgx/v5"
+        emit_interface: true
+        
+  # Line items queries
+  - engine: "postgresql"
+    queries: "billing/db/queries/line_items.sql"
+    schema: "billing/db/migrations"
+    gen:
+      go:
+        package: lineitems
+        out: billing/store/lineitems
+        sql_package: "pgx/v5"
+        emit_interface: true
