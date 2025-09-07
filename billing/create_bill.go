@@ -2,10 +2,7 @@ package billing
 
 import (
 	"context"
-	"strconv"
 	"time"
-
-	"github.com/go-playground/validator/v10"
 
 	"encore.dev/beta/errs"
 	"encore.dev/rlog"
@@ -13,8 +10,20 @@ import (
 	"encore.app/billing/model"
 )
 
+type CreateBillRequest struct {
+	IdempotencyKey string `header:"X-Idempotency-Key" json:"-"`
+
+	Currency  string    `json:"currency" validate:"required,len=3,alpha"`
+	StartTime time.Time `json:"start_time"`
+	EndTime   time.Time `json:"end_time" validate:"required"`
+}
+
+type BillResponse struct {
+	Bill model.Bill `json:"bill"`
+}
+
 //encore:api public path=/v1/bills method=POST tag:idempotency
-func (s *Service) CreateBill(ctx context.Context, req *CreateBillRequest) (*CreateBillResponse, error) {
+func (s *Service) CreateBill(ctx context.Context, req *CreateBillRequest) (*BillResponse, error) {
 	if req.StartTime.IsZero() {
 		req.StartTime = time.Now()
 	}
@@ -29,36 +38,10 @@ func (s *Service) CreateBill(ctx context.Context, req *CreateBillRequest) (*Crea
 		return nil, err
 	}
 
-	return &CreateBillResponse{
-		ID:        strconv.Itoa(int(result.ID)),
-		Currency:  result.Currency,
-		Status:    string(result.Status),
-		StartTime: result.StartTime,
-		EndTime:   result.EndTime,
-		CreatedAt: result.CreatedAt,
-		UpdatedAt: result.UpdatedAt,
+	return &BillResponse{
+		Bill: *result,
 	}, nil
 }
-
-type CreateBillRequest struct {
-	IdempotencyKey string `header:"X-Idempotency-Key" json:"-"`
-
-	Currency  string    `json:"currency" validate:"required,len=3,alpha"`
-	StartTime time.Time `json:"start_time"`
-	EndTime   time.Time `json:"end_time" validate:"required"`
-}
-
-type CreateBillResponse struct {
-	ID        string    `json:"id"`
-	Currency  string    `json:"currency"`
-	Status    string    `json:"status"`
-	StartTime time.Time `json:"start_time"`
-	EndTime   time.Time `json:"end_time"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-var validate = validator.New()
 
 // Validate implements validation for CreateBillRequest using go-playground/validator
 func (r *CreateBillRequest) Validate() error {
