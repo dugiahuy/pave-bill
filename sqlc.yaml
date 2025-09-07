@@ -21,5 +21,14 @@ sql:
         out: billing/repository/lineitems
         sql_package: "pgx/v5"
         emit_interface: true
+
+  # Currencies queries
+  - engine: "postgresql"
+    queries: "billing/db/queries/currencies.sql"
+    schema: "billing/db/migrations"
+    gen:
+      go:
+        package: currencies
+        out: billing/repository/currencies
         sql_package: "pgx/v5"
         emit_interface: true
