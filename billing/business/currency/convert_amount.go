@@ -6,48 +6,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"encore.dev/beta/errs"
-
 	"encore.app/billing/model"
-	"encore.app/billing/repository/currencies"
 )
 
-type Service interface {
-	GetCurrency(ctx context.Context, code string) (*model.CurrencyInfo, error)
-	ConvertAmount(ctx context.Context, fromCurrency, toCurrency string, amountCents int64) (*model.ConversionResult, error)
-}
-
-type service struct {
-	currencyRepo currencies.Querier
-}
-
-func NewCurrencyService(currencyRepo currencies.Querier) Service {
-	return &service{
-		currencyRepo: currencyRepo,
-	}
-}
-
-func (s *service) GetCurrency(ctx context.Context, code string) (*model.CurrencyInfo, error) {
-	dbCurrency, err := s.currencyRepo.GetCurrency(ctx, pgtype.Text{String: code, Valid: true})
-	if err != nil {
-		return nil, &errs.Error{Code: errs.NotFound, Message: "currency not supported"}
-	}
-
-	currency := &model.CurrencyInfo{
-		ID:      dbCurrency.ID,
-		Code:    dbCurrency.Code.String,
-		Rate:    parseNumeric(dbCurrency.Rate),
-		Enabled: dbCurrency.Enabled,
-	}
-
-	if dbCurrency.Symbol.Valid {
-		currency.Symbol = &dbCurrency.Symbol.String
-	}
-
-	return currency, nil
-}
-
-func (s *service) ConvertAmount(ctx context.Context, fromCurrency, toCurrency string, amountCents int64) (*model.ConversionResult, error) {
+func (s *business) ConvertAmount(ctx context.Context, fromCurrency, toCurrency string, amountCents int64) (*model.ConversionResult, error) {
 	if fromCurrency == toCurrency {
 		return &model.ConversionResult{
 			ConvertedAmount: amountCents,
@@ -86,7 +48,7 @@ func parseNumeric(numeric pgtype.Numeric) float64 {
 	if !numeric.Valid {
 		return 1.0 // default rate
 	}
-	
+
 	// For simplicity, return hardcoded rates - in production, properly convert pgtype.Numeric
 	// This would typically use the shopspring/decimal library
 	return 1.0 // simplified fallback rate

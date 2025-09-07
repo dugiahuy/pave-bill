@@ -3,6 +3,7 @@ package bill
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -14,14 +15,17 @@ import (
 	"encore.app/billing/repository/bills"
 )
 
-// Create handles the business logic for creating a new bill with explicit idempotency
-func (s *service) Create(ctx context.Context, bill *model.Bill) (*model.Bill, error) {
-	dbBill, err := s.billRepo.CreateBill(ctx, bills.CreateBillParams{
+// CreateBill handles the business logic for creating a new bill with explicit idempotency
+func (b *business) CreateBill(ctx context.Context, bill *model.Bill) (*model.Bill, error) {
+	workflowID := fmt.Sprintf("bill-%s", bill.IdempotencyKey)
+
+	dbBill, err := b.billRepo.CreateBill(ctx, bills.CreateBillParams{
 		Status:         string(model.BillStatusPending),
 		Currency:       bill.Currency,
 		StartTime:      pgtype.Timestamptz{Time: bill.StartTime, Valid: true},
 		EndTime:        pgtype.Timestamptz{Time: bill.EndTime, Valid: true},
 		IdempotencyKey: bill.IdempotencyKey,
+		WorkflowID:     pgtype.Text{String: workflowID, Valid: true},
 	})
 	if err != nil {
 		var e *pgconn.PgError
@@ -59,6 +63,10 @@ func convertDBBillToModel(dbBill bills.Bill) *model.Bill {
 
 	if dbBill.BilledAt.Valid {
 		bill.BilledAt = &dbBill.BilledAt.Time
+	}
+
+	if dbBill.WorkflowID.Valid {
+		bill.WorkflowID = &dbBill.WorkflowID.String
 	}
 
 	return bill
