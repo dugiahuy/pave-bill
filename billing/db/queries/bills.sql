@@ -22,3 +22,21 @@ RETURNING *;
 
 -- name: GetBillByIdempotencyKey :one
 SELECT * FROM bills WHERE idempotency_key = $1;
+
+-- name: ListBills :many
+SELECT * FROM bills 
+ORDER BY created_at DESC 
+LIMIT $1 OFFSET $2;
+
+-- name: CountBills :one
+SELECT COUNT(*) FROM bills;
+
+-- name: UpdateBillTotal :one
+UPDATE bills 
+SET total_amount_cents = (
+    SELECT COALESCE(SUM(amount_cents), 0) 
+    FROM line_items 
+    WHERE bill_id = $1
+), updated_at = NOW()
+WHERE bills.id = $2 
+RETURNING *;

@@ -9,6 +9,8 @@ import (
 
 type Service interface {
 	Create(ctx context.Context, bill *model.Bill) (*model.Bill, error)
+	Get(ctx context.Context, id int32) (*model.Bill, error)
+	List(ctx context.Context, limit, offset int32) ([]*model.Bill, int64, error)
 }
 
 // BillService handles business logic for bills
