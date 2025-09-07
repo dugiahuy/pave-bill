@@ -48,7 +48,7 @@ func IdempotencyMiddleware(req middleware.Request, next middleware.Next) middlew
 			response := next(req)
 
 			if response.Err != nil {
-				deleteCacheEntry(req.Context(), cacheKey, idempotencyKey)
+				deleteCacheEntry(req.Context(), cacheKey)
 			} else {
 				markAsCompleted(req.Context(), cacheKey, bodyHash, idempotencyKey, response)
 			}
@@ -166,7 +166,7 @@ func markAsProcessing(ctx context.Context, cacheKey model.IdempotencyKey) *errs.
 }
 
 // deleteCacheEntry removes processing entry to allow retry
-func deleteCacheEntry(ctx context.Context, cacheKey model.IdempotencyKey, idempotencyKey string) {
+func deleteCacheEntry(ctx context.Context, cacheKey model.IdempotencyKey) {
 	if _, deleteErr := IdempotencyCache.Delete(ctx, cacheKey); deleteErr != nil {
 		rlog.Error("Failed to clear failed request from cache", "error", deleteErr)
 	}

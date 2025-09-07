@@ -24,9 +24,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	}
 }
 
-// WithTx creates a new Repository using a transaction
 func (r *Repository) WithTx(tx interface{}) *Repository {
-	// Note: You'll need to implement transaction handling for each domain
 	// This is a placeholder for transaction support
 	return &Repository{
 		Bills:      r.Bills,

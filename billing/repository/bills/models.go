@@ -21,6 +21,7 @@ type Bill struct {
 	IdempotencyKey   string
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
+	WorkflowID       pgtype.Text
 }
 
 type Currency struct {

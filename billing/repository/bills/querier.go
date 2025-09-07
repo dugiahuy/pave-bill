@@ -6,6 +6,8 @@ package bills
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
@@ -14,9 +16,11 @@ type Querier interface {
 	CreateBill(ctx context.Context, arg CreateBillParams) (Bill, error)
 	GetBill(ctx context.Context, id int32) (Bill, error)
 	GetBillByIdempotencyKey(ctx context.Context, idempotencyKey string) (Bill, error)
+	GetBillForUpdate(ctx context.Context, id int32) (Bill, error)
 	ListBills(ctx context.Context, arg ListBillsParams) ([]Bill, error)
+	UpdateBillClosure(ctx context.Context, arg UpdateBillClosureParams) (Bill, error)
 	UpdateBillStatus(ctx context.Context, arg UpdateBillStatusParams) (Bill, error)
-	UpdateBillTotal(ctx context.Context, arg UpdateBillTotalParams) (Bill, error)
+	UpdateBillTotal(ctx context.Context, billID pgtype.Int4) (Bill, error)
 }
 
 var _ Querier = (*Queries)(nil)

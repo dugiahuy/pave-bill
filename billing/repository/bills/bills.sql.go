@@ -29,10 +29,11 @@ INSERT INTO bills (
     status,
     start_time,
     end_time,
-    idempotency_key
+    idempotency_key,
+    workflow_id
 ) VALUES (
-    $1, $2, $3, $4, $5
-) RETURNING id, currency, status, close_reason, error_message, total_amount_cents, start_time, end_time, billed_at, idempotency_key, created_at, updated_at
+    $1, $2, $3, $4, $5, $6
+) RETURNING id, currency, status, close_reason, error_message, total_amount_cents, start_time, end_time, billed_at, idempotency_key, created_at, updated_at, workflow_id
 `
 
 type CreateBillParams struct {
@@ -41,6 +42,7 @@ type CreateBillParams struct {
 	StartTime      pgtype.Timestamptz
 	EndTime        pgtype.Timestamptz
 	IdempotencyKey string
+	WorkflowID     pgtype.Text
 }
 
 // Bills related queries
@@ -51,6 +53,7 @@ func (q *Queries) CreateBill(ctx context.Context, arg CreateBillParams) (Bill, e
 		arg.StartTime,
 		arg.EndTime,
 		arg.IdempotencyKey,
+		arg.WorkflowID,
 	)
 	var i Bill
 	err := row.Scan(
@@ -66,12 +69,13 @@ func (q *Queries) CreateBill(ctx context.Context, arg CreateBillParams) (Bill, e
 		&i.IdempotencyKey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.WorkflowID,
 	)
 	return i, err
 }
 
 const getBill = `-- name: GetBill :one
-SELECT id, currency, status, close_reason, error_message, total_amount_cents, start_time, end_time, billed_at, idempotency_key, created_at, updated_at FROM bills WHERE id = $1
+SELECT id, currency, status, close_reason, error_message, total_amount_cents, start_time, end_time, billed_at, idempotency_key, created_at, updated_at, workflow_id FROM bills WHERE id = $1
 `
 
 func (q *Queries) GetBill(ctx context.Context, id int32) (Bill, error) {
@@ -90,12 +94,13 @@ func (q *Queries) GetBill(ctx context.Context, id int32) (Bill, error) {
 		&i.IdempotencyKey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.WorkflowID,
 	)
 	return i, err
 }
 
 const getBillByIdempotencyKey = `-- name: GetBillByIdempotencyKey :one
-SELECT id, currency, status, close_reason, error_message, total_amount_cents, start_time, end_time, billed_at, idempotency_key, created_at, updated_at FROM bills WHERE idempotency_key = $1
+SELECT id, currency, status, close_reason, error_message, total_amount_cents, start_time, end_time, billed_at, idempotency_key, created_at, updated_at, workflow_id FROM bills WHERE idempotency_key = $1
 `
 
 func (q *Queries) GetBillByIdempotencyKey(ctx context.Context, idempotencyKey string) (Bill, error) {
@@ -114,12 +119,38 @@ func (q *Queries) GetBillByIdempotencyKey(ctx context.Context, idempotencyKey st
 		&i.IdempotencyKey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.WorkflowID,
+	)
+	return i, err
+}
+
+const getBillForUpdate = `-- name: GetBillForUpdate :one
+SELECT id, currency, status, close_reason, error_message, total_amount_cents, start_time, end_time, billed_at, idempotency_key, created_at, updated_at, workflow_id FROM bills WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetBillForUpdate(ctx context.Context, id int32) (Bill, error) {
+	row := q.db.QueryRow(ctx, getBillForUpdate, id)
+	var i Bill
+	err := row.Scan(
+		&i.ID,
+		&i.Currency,
+		&i.Status,
+		&i.CloseReason,
+		&i.ErrorMessage,
+		&i.TotalAmountCents,
+		&i.StartTime,
+		&i.EndTime,
+		&i.BilledAt,
+		&i.IdempotencyKey,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.WorkflowID,
 	)
 	return i, err
 }
 
 const listBills = `-- name: ListBills :many
-SELECT id, currency, status, close_reason, error_message, total_amount_cents, start_time, end_time, billed_at, idempotency_key, created_at, updated_at FROM bills 
+SELECT id, currency, status, close_reason, error_message, total_amount_cents, start_time, end_time, billed_at, idempotency_key, created_at, updated_at, workflow_id FROM bills 
 ORDER BY created_at DESC 
 LIMIT $1 OFFSET $2
 `
@@ -151,6 +182,7 @@ func (q *Queries) ListBills(ctx context.Context, arg ListBillsParams) ([]Bill, e
 			&i.IdempotencyKey,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.WorkflowID,
 		); err != nil {
 			return nil, err
 		}
@@ -162,11 +194,54 @@ func (q *Queries) ListBills(ctx context.Context, arg ListBillsParams) ([]Bill, e
 	return items, nil
 }
 
+const updateBillClosure = `-- name: UpdateBillClosure :one
+UPDATE bills 
+SET status = $2, 
+    close_reason = $3,
+    error_message = $4,
+    updated_at = NOW()
+WHERE id = $1 
+RETURNING id, currency, status, close_reason, error_message, total_amount_cents, start_time, end_time, billed_at, idempotency_key, created_at, updated_at, workflow_id
+`
+
+type UpdateBillClosureParams struct {
+	ID           int32
+	Status       string
+	CloseReason  pgtype.Text
+	ErrorMessage pgtype.Text
+}
+
+func (q *Queries) UpdateBillClosure(ctx context.Context, arg UpdateBillClosureParams) (Bill, error) {
+	row := q.db.QueryRow(ctx, updateBillClosure,
+		arg.ID,
+		arg.Status,
+		arg.CloseReason,
+		arg.ErrorMessage,
+	)
+	var i Bill
+	err := row.Scan(
+		&i.ID,
+		&i.Currency,
+		&i.Status,
+		&i.CloseReason,
+		&i.ErrorMessage,
+		&i.TotalAmountCents,
+		&i.StartTime,
+		&i.EndTime,
+		&i.BilledAt,
+		&i.IdempotencyKey,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.WorkflowID,
+	)
+	return i, err
+}
+
 const updateBillStatus = `-- name: UpdateBillStatus :one
 UPDATE bills 
 SET status = $2, updated_at = NOW()
 WHERE id = $1 
-RETURNING id, currency, status, close_reason, error_message, total_amount_cents, start_time, end_time, billed_at, idempotency_key, created_at, updated_at
+RETURNING id, currency, status, close_reason, error_message, total_amount_cents, start_time, end_time, billed_at, idempotency_key, created_at, updated_at, workflow_id
 `
 
 type UpdateBillStatusParams struct {
@@ -190,6 +265,7 @@ func (q *Queries) UpdateBillStatus(ctx context.Context, arg UpdateBillStatusPara
 		&i.IdempotencyKey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.WorkflowID,
 	)
 	return i, err
 }
@@ -201,17 +277,12 @@ SET total_amount_cents = (
     FROM line_items 
     WHERE bill_id = $1
 ), updated_at = NOW()
-WHERE bills.id = $2 
-RETURNING id, currency, status, close_reason, error_message, total_amount_cents, start_time, end_time, billed_at, idempotency_key, created_at, updated_at
+WHERE id = $1
+RETURNING id, currency, status, close_reason, error_message, total_amount_cents, start_time, end_time, billed_at, idempotency_key, created_at, updated_at, workflow_id
 `
 
-type UpdateBillTotalParams struct {
-	BillID pgtype.Int4
-	ID     int32
-}
-
-func (q *Queries) UpdateBillTotal(ctx context.Context, arg UpdateBillTotalParams) (Bill, error) {
-	row := q.db.QueryRow(ctx, updateBillTotal, arg.BillID, arg.ID)
+func (q *Queries) UpdateBillTotal(ctx context.Context, billID pgtype.Int4) (Bill, error) {
+	row := q.db.QueryRow(ctx, updateBillTotal, billID)
 	var i Bill
 	err := row.Scan(
 		&i.ID,
@@ -226,6 +297,7 @@ func (q *Queries) UpdateBillTotal(ctx context.Context, arg UpdateBillTotalParams
 		&i.IdempotencyKey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.WorkflowID,
 	)
 	return i, err
 }
