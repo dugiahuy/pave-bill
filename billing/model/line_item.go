@@ -16,6 +16,12 @@ type LineItem struct {
 	IdempotencyKey string            `json:"idempotency_key"`
 	CreatedAt      time.Time         `json:"created_at"`
 	UpdatedAt      time.Time         `json:"updated_at"`
+
+	BillWorkflowID string `json:"-"`
+}
+
+func (li *LineItem) SetBillWorkflowID(id string) {
+	li.BillWorkflowID = id
 }
 
 type CurrencyMetadata struct {

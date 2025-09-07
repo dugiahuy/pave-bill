@@ -29,7 +29,7 @@ func (s *Service) GetBills(ctx context.Context, req *GetBillsRequest) (*GetBills
 		req.Limit = 100
 	}
 
-	bills, totalCount, err := s.services.Bill.List(ctx, int32(req.Limit), int32(req.Offset))
+	bills, totalCount, err := s.business.ListBills(ctx, int32(req.Limit), int32(req.Offset))
 	if err != nil {
 		rlog.Error("failed to get bills", "error", err)
 		return nil, err

@@ -15,6 +15,8 @@ type Bill struct {
 	EndTime          time.Time  `json:"end_time"`
 	BilledAt         *time.Time `json:"billed_at,omitempty"`
 	IdempotencyKey   string     `json:"idempotency_key"`
+	WorkflowID       *string    `json:"workflow_id,omitempty"`
+	LineItems        []LineItem `json:"line_items,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 }
@@ -22,9 +24,9 @@ type Bill struct {
 type BillStatus string
 
 const (
-	BillStatusPending BillStatus = "pending"
-	BillStatusActive  BillStatus = "active"
-	BillStatusClosing BillStatus = "closing"
-	BillStatusClosed  BillStatus = "closed"
-	BillStatusFailed  BillStatus = "failed"
+	BillStatusPending           BillStatus = "pending"
+	BillStatusActive            BillStatus = "active"
+	BillStatusClosing           BillStatus = "closing"
+	BillStatusClosed            BillStatus = "closed"
+	BillStatusAttentionRequired BillStatus = "attention_required"
 )

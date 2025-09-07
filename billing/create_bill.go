@@ -2,12 +2,15 @@ package billing
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"encore.dev/beta/errs"
 	"encore.dev/rlog"
+	"go.temporal.io/sdk/client"
 
 	"encore.app/billing/model"
+	"encore.app/billing/workflow"
 )
 
 type CreateBillRequest struct {
@@ -27,7 +30,7 @@ func (s *Service) CreateBill(ctx context.Context, req *CreateBillRequest) (*Bill
 	if req.StartTime.IsZero() {
 		req.StartTime = time.Now()
 	}
-	result, err := s.services.Bill.Create(ctx, &model.Bill{
+	result, err := s.business.CreateBill(ctx, &model.Bill{
 		Currency:       req.Currency,
 		StartTime:      req.StartTime,
 		EndTime:        req.EndTime,
@@ -36,6 +39,14 @@ func (s *Service) CreateBill(ctx context.Context, req *CreateBillRequest) (*Bill
 	if err != nil {
 		rlog.Error("failed to create bill", "error", err)
 		return nil, err
+	}
+
+	// Start Temporal workflow for bill lifecycle management
+	err = s.startBillingWorkflow(ctx, result)
+	if err != nil {
+		rlog.Error("failed to start billing workflow", "error", err, "bill_id", result.ID)
+		// Don't fail the bill creation, but log the error
+		// The workflow can be started manually later if needed
 	}
 
 	return &BillResponse{
@@ -66,33 +77,21 @@ func (r *CreateBillRequest) Validate() error {
 	return nil
 }
 
-// ==================================================================
+// startBillingWorkflow starts a Temporal workflow for bill lifecycle management
+func (s *Service) startBillingWorkflow(ctx context.Context, bill *model.Bill) error {
+	workflowID := fmt.Sprintf("bill-%s", bill.IdempotencyKey)
 
-// Encore comes with a built-in local development dashboard for
-// exploring your API, viewing documentation, debugging with
-// distributed tracing, and more:
-//
-//     http://localhost:9400
-//
+	options := client.StartWorkflowOptions{
+		ID:        workflowID,
+		TaskQueue: taskQueue,
+	}
 
-// ==================================================================
+	params := workflow.BillingPeriodWorkflowParams{
+		BillID:    bill.ID,
+		StartTime: bill.StartTime,
+		EndTime:   bill.EndTime,
+	}
 
-// Next steps
-//
-// 1. Deploy your application to the cloud
-//
-//     git add -A .
-//     git commit -m 'Commit message'
-//     git push encore
-//
-// 2. To continue exploring Encore, check out some of these topics:
-//
-// 	  Defining Services:			 https://encore.dev/docs/go/primitives/services
-// 	  Defining APIs:				 https://encore.dev/docs/go/primitives/defining-apis
-//    Using SQL databases:  		 https://encore.dev/docs/go/primitives/databases
-//    Using Pub/Sub:  				 https://encore.dev/docs/go/primitives/pubsub
-//    Authenticating users: 		 https://encore.dev/docs/go/develop/auth
-//    Building a REST API:  		 https://encore.dev/docs/go/tutorials/rest-api
-//	  Building an Event-Driven app:  https://encore.dev/docs/go/tutorials/uptime
-//    Building a Slack bot: 		 https://encore.dev/docs/go/tutorials/slack-bot
-//	  Example apps repo:			 https://github.com/encoredev/examples
+	_, err := s.temporal.ExecuteWorkflow(ctx, options, workflow.BillingPeriod, params)
+	return err
+}

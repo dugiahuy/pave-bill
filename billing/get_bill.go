@@ -13,7 +13,7 @@ func (s *Service) GetBill(ctx context.Context, id int) (*BillResponse, error) {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "invalid bill ID"}
 	}
 
-	result, err := s.services.Bill.Get(ctx, int32(id))
+	result, err := s.business.GetBill(ctx, int32(id))
 	if err != nil {
 		rlog.Error("failed to get bill", "error", err, "id", id)
 		return nil, err

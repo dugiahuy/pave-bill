@@ -8,6 +8,7 @@ import (
 	"encore.dev/rlog"
 
 	"encore.app/billing/model"
+	"encore.app/billing/workflow"
 )
 
 type CreateLineItemRequest struct {
@@ -24,13 +25,13 @@ type LineItemResponse struct {
 }
 
 // encore:api public path=/v1/bills/:id/line_items method=POST tag:idempotency
-func (s *Service) CreateLineItem(ctx context.Context, id int, req *CreateLineItemRequest) (*LineItemResponse, error) {
+func (s *Service) CreateLineItem(ctx context.Context, id int32, req *CreateLineItemRequest) (*LineItemResponse, error) {
 	if id <= 0 {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "invalid bill ID"}
 	}
 
 	lineItem := &model.LineItem{
-		BillID:         int32(id),
+		BillID:         id,
 		Currency:       req.Currency,
 		AmountCents:    req.AmountCents,
 		Description:    req.Description,
@@ -39,11 +40,20 @@ func (s *Service) CreateLineItem(ctx context.Context, id int, req *CreateLineIte
 		IdempotencyKey: req.IdempotencyKey,
 	}
 
-	result, err := s.services.LineItem.Create(ctx, lineItem)
+	result, err := s.business.AddLineItemToBill(ctx, id, lineItem)
 	if err != nil {
 		rlog.Error("failed to create line item", "error", err, "bill_id", id)
 		return nil, err
 	}
+
+	// Signal workflow asynchronously - don't block the response
+	go func() {
+		signalCtx := context.Background()
+		err := s.signalAddLineItem(signalCtx, result.BillWorkflowID, result.ID)
+		if err != nil {
+			rlog.Error("failed to signal workflow", "error", err, "workflow_id", result.BillWorkflowID, "line_item_id", result.ID)
+		}
+	}()
 
 	return &LineItemResponse{
 		LineItem: *result,
@@ -57,4 +67,13 @@ func (r *CreateLineItemRequest) Validate() error {
 	}
 
 	return nil
+}
+
+// signalAddLineItem sends a signal to the workflow to process the new line item
+func (s *Service) signalAddLineItem(ctx context.Context, workflowID string, lineItemID int32) error {
+	signal := workflow.AddLineItemSignal{
+		LineItemID: lineItemID,
+	}
+
+	return s.temporal.SignalWorkflow(ctx, workflowID, "", workflow.AddLineItemSignalName, signal)
 }

@@ -1,32 +1,89 @@
 package billing
 
 import (
+	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/worker"
+
 	"encore.dev/storage/sqldb"
 	"github.com/go-playground/validator/v10"
 
+	"encore.app/billing/business/bill"
+	"encore.app/billing/business/currency"
+	"encore.app/billing/domain"
 	"encore.app/billing/repository"
-	"encore.app/billing/service"
+	"encore.app/billing/repository/bills"
+	"encore.app/billing/workflow"
 )
 
 var (
 	paveBillDB = sqldb.NewDatabase("pave_bill", sqldb.DatabaseConfig{
 		Migrations: "./db/migrations",
 	})
-
 	validate = validator.New()
+
+	taskQueue = "billing-queue"
 )
 
 //encore:service
 type Service struct {
-	services service.Services
+	business bill.Business
+	temporal client.Client
+	worker   worker.Worker
 }
 
 func initService() (*Service, error) {
-	pgxdb := sqldb.Driver(paveBillDB)
+	pgxdb := sqldb.Driver[*pgxpool.Pool](paveBillDB)
 	repo := repository.NewRepository(pgxdb)
-	services := service.NewServices(repo)
+
+	temporal, worker, err := initTemporal()
+	if err != nil {
+		return nil, err
+	}
+
+	currencyBusiness := currency.NewCurrencyBusiness(repo.Currencies)
+	billStateMachine := domain.NewBillStateMachine(pgxdb, repo.Bills.(*bills.Queries))
+	billService := bill.NewBillBusiness(repo.Bills, repo.LineItems, currencyBusiness, billStateMachine)
+
+	// Set activity dependencies for Temporal workflows
+	workflow.SetActivityDependencies(billService)
 
 	return &Service{
-		services: services,
+		business: billService,
+		temporal: temporal,
+		worker:   worker,
 	}, nil
+}
+
+func initTemporal() (client.Client, worker.Worker, error) {
+	c, err := client.Dial(client.Options{
+		HostPort:  "localhost:7233",
+		Namespace: "default",
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	w := worker.New(c, taskQueue, worker.Options{})
+
+	w.RegisterWorkflow(workflow.BillingPeriod)
+
+	w.RegisterActivity(workflow.AddLineItemActivity)
+	w.RegisterActivity(workflow.CloseBillActivity)
+	w.RegisterActivity(workflow.ActivateBillActivity)
+
+	if err = w.Start(); err != nil {
+		c.Close()
+		return nil, nil, fmt.Errorf("start temporal worker: %v", err)
+	}
+
+	return c, w, nil
+}
+
+func (s *Service) Shutdown(force context.Context) {
+	s.temporal.Close()
+	s.worker.Stop()
 }
