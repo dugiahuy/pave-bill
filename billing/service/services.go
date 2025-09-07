@@ -1,8 +1,8 @@
 package service
 
 import (
+	"encore.app/billing/repository"
 	"encore.app/billing/service/bill"
-	"encore.app/billing/store"
 )
 
 // Services holds all business services
@@ -11,7 +11,7 @@ type Services struct {
 }
 
 // NewServices creates a new services container
-func NewServices(repo *store.Store) Services {
+func NewServices(repo *repository.Repository) Services {
 	billService := bill.NewBillService(repo.Bills)
 
 	return Services{

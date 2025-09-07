@@ -3,8 +3,9 @@ package idempotency
 import (
 	"time"
 
-	"encore.app/billing/model"
 	"encore.dev/storage/cache"
+
+	"encore.app/billing/model"
 )
 
 // IdempotencyCluster is the cache cluster for idempotency

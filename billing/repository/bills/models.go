@@ -42,4 +42,5 @@ type LineItem struct {
 	IdempotencyKey string
 	CreatedAt      pgtype.Timestamptz
 	UpdatedAt      pgtype.Timestamptz
+	Metadata       []byte
 }

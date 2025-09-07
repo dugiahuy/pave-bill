@@ -7,7 +7,7 @@ sql:
     gen:
       go:
         package: bills
-        out: billing/store/bills
+        out: billing/repository/bills
         sql_package: "pgx/v5"
         emit_interface: true
         
@@ -18,6 +18,8 @@ sql:
     gen:
       go:
         package: lineitems
-        out: billing/store/lineitems
+        out: billing/repository/lineitems
+        sql_package: "pgx/v5"
+        emit_interface: true
         sql_package: "pgx/v5"
         emit_interface: true

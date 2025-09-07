@@ -1,14 +1,20 @@
 package billing
 
 import (
-	"encore.app/billing/service"
-	"encore.app/billing/store"
 	"encore.dev/storage/sqldb"
+	"github.com/go-playground/validator/v10"
+
+	"encore.app/billing/repository"
+	"encore.app/billing/service"
 )
 
-var paveBillDB = sqldb.NewDatabase("pave_bill", sqldb.DatabaseConfig{
-	Migrations: "./db/migrations",
-})
+var (
+	paveBillDB = sqldb.NewDatabase("pave_bill", sqldb.DatabaseConfig{
+		Migrations: "./db/migrations",
+	})
+
+	validate = validator.New()
+)
 
 //encore:service
 type Service struct {
@@ -17,7 +23,7 @@ type Service struct {
 
 func initService() (*Service, error) {
 	pgxdb := sqldb.Driver(paveBillDB)
-	repo := store.NewStore(pgxdb)
+	repo := repository.NewRepository(pgxdb)
 	services := service.NewServices(repo)
 
 	return &Service{

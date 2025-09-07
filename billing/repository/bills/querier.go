@@ -9,11 +9,14 @@ import (
 )
 
 type Querier interface {
+	CountBills(ctx context.Context) (int64, error)
 	// Bills related queries
 	CreateBill(ctx context.Context, arg CreateBillParams) (Bill, error)
 	GetBill(ctx context.Context, id int32) (Bill, error)
 	GetBillByIdempotencyKey(ctx context.Context, idempotencyKey string) (Bill, error)
+	ListBills(ctx context.Context, arg ListBillsParams) ([]Bill, error)
 	UpdateBillStatus(ctx context.Context, arg UpdateBillStatusParams) (Bill, error)
+	UpdateBillTotal(ctx context.Context, arg UpdateBillTotalParams) (Bill, error)
 }
 
 var _ Querier = (*Queries)(nil)

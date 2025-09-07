@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"encore.app/billing/model"
-	"encore.app/billing/store/bills"
+	"encore.app/billing/repository/bills"
 )
 
 type Service interface {

@@ -20,10 +20,11 @@ INSERT INTO line_items (
     description,
     incurred_at,
     reference_id,
+    metadata,
     idempotency_key
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7
-) RETURNING id, bill_id, amount_cents, currency, description, incurred_at, reference_id, idempotency_key, created_at, updated_at
+    $1, $2, $3, $4, $5, $6, $7, $8
+) RETURNING id, bill_id, amount_cents, currency, description, incurred_at, reference_id, idempotency_key, created_at, updated_at, metadata
 `
 
 type CreateLineItemParams struct {
@@ -33,6 +34,7 @@ type CreateLineItemParams struct {
 	Description    pgtype.Text
 	IncurredAt     pgtype.Timestamptz
 	ReferenceID    pgtype.Text
+	Metadata       []byte
 	IdempotencyKey string
 }
 
@@ -45,6 +47,7 @@ func (q *Queries) CreateLineItem(ctx context.Context, arg CreateLineItemParams) 
 		arg.Description,
 		arg.IncurredAt,
 		arg.ReferenceID,
+		arg.Metadata,
 		arg.IdempotencyKey,
 	)
 	var i LineItem
@@ -59,6 +62,7 @@ func (q *Queries) CreateLineItem(ctx context.Context, arg CreateLineItemParams) 
 		&i.IdempotencyKey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Metadata,
 	)
 	return i, err
 }
@@ -73,7 +77,7 @@ func (q *Queries) DeleteLineItem(ctx context.Context, id int32) error {
 }
 
 const getLineItem = `-- name: GetLineItem :one
-SELECT id, bill_id, amount_cents, currency, description, incurred_at, reference_id, idempotency_key, created_at, updated_at FROM line_items WHERE id = $1
+SELECT id, bill_id, amount_cents, currency, description, incurred_at, reference_id, idempotency_key, created_at, updated_at, metadata FROM line_items WHERE id = $1
 `
 
 func (q *Queries) GetLineItem(ctx context.Context, id int32) (LineItem, error) {
@@ -90,12 +94,13 @@ func (q *Queries) GetLineItem(ctx context.Context, id int32) (LineItem, error) {
 		&i.IdempotencyKey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Metadata,
 	)
 	return i, err
 }
 
 const getLineItemsByBill = `-- name: GetLineItemsByBill :many
-SELECT id, bill_id, amount_cents, currency, description, incurred_at, reference_id, idempotency_key, created_at, updated_at FROM line_items WHERE bill_id = $1 ORDER BY incurred_at DESC
+SELECT id, bill_id, amount_cents, currency, description, incurred_at, reference_id, idempotency_key, created_at, updated_at, metadata FROM line_items WHERE bill_id = $1 ORDER BY incurred_at DESC
 `
 
 func (q *Queries) GetLineItemsByBill(ctx context.Context, billID pgtype.Int4) ([]LineItem, error) {
@@ -118,6 +123,7 @@ func (q *Queries) GetLineItemsByBill(ctx context.Context, billID pgtype.Int4) ([
 			&i.IdempotencyKey,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Metadata,
 		); err != nil {
 			return nil, err
 		}
@@ -146,7 +152,7 @@ const updateLineItem = `-- name: UpdateLineItem :one
 UPDATE line_items 
 SET amount_cents = $2, description = $3, updated_at = NOW()
 WHERE id = $1 
-RETURNING id, bill_id, amount_cents, currency, description, incurred_at, reference_id, idempotency_key, created_at, updated_at
+RETURNING id, bill_id, amount_cents, currency, description, incurred_at, reference_id, idempotency_key, created_at, updated_at, metadata
 `
 
 type UpdateLineItemParams struct {
@@ -169,6 +175,7 @@ func (q *Queries) UpdateLineItem(ctx context.Context, arg UpdateLineItemParams) 
 		&i.IdempotencyKey,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Metadata,
 	)
 	return i, err
 }

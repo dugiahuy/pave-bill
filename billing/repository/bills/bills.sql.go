@@ -11,6 +11,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countBills = `-- name: CountBills :one
+SELECT COUNT(*) FROM bills
+`
+
+func (q *Queries) CountBills(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countBills)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createBill = `-- name: CreateBill :one
 
 INSERT INTO bills (
@@ -107,6 +118,50 @@ func (q *Queries) GetBillByIdempotencyKey(ctx context.Context, idempotencyKey st
 	return i, err
 }
 
+const listBills = `-- name: ListBills :many
+SELECT id, currency, status, close_reason, error_message, total_amount_cents, start_time, end_time, billed_at, idempotency_key, created_at, updated_at FROM bills 
+ORDER BY created_at DESC 
+LIMIT $1 OFFSET $2
+`
+
+type ListBillsParams struct {
+	Limit  int32
+	Offset int32
+}
+
+func (q *Queries) ListBills(ctx context.Context, arg ListBillsParams) ([]Bill, error) {
+	rows, err := q.db.Query(ctx, listBills, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Bill
+	for rows.Next() {
+		var i Bill
+		if err := rows.Scan(
+			&i.ID,
+			&i.Currency,
+			&i.Status,
+			&i.CloseReason,
+			&i.ErrorMessage,
+			&i.TotalAmountCents,
+			&i.StartTime,
+			&i.EndTime,
+			&i.BilledAt,
+			&i.IdempotencyKey,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateBillStatus = `-- name: UpdateBillStatus :one
 UPDATE bills 
 SET status = $2, updated_at = NOW()
@@ -121,6 +176,42 @@ type UpdateBillStatusParams struct {
 
 func (q *Queries) UpdateBillStatus(ctx context.Context, arg UpdateBillStatusParams) (Bill, error) {
 	row := q.db.QueryRow(ctx, updateBillStatus, arg.ID, arg.Status)
+	var i Bill
+	err := row.Scan(
+		&i.ID,
+		&i.Currency,
+		&i.Status,
+		&i.CloseReason,
+		&i.ErrorMessage,
+		&i.TotalAmountCents,
+		&i.StartTime,
+		&i.EndTime,
+		&i.BilledAt,
+		&i.IdempotencyKey,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateBillTotal = `-- name: UpdateBillTotal :one
+UPDATE bills 
+SET total_amount_cents = (
+    SELECT COALESCE(SUM(amount_cents), 0) 
+    FROM line_items 
+    WHERE bill_id = $1
+), updated_at = NOW()
+WHERE bills.id = $2 
+RETURNING id, currency, status, close_reason, error_message, total_amount_cents, start_time, end_time, billed_at, idempotency_key, created_at, updated_at
+`
+
+type UpdateBillTotalParams struct {
+	BillID pgtype.Int4
+	ID     int32
+}
+
+func (q *Queries) UpdateBillTotal(ctx context.Context, arg UpdateBillTotalParams) (Bill, error) {
+	row := q.db.QueryRow(ctx, updateBillTotal, arg.BillID, arg.ID)
 	var i Bill
 	err := row.Scan(
 		&i.ID,
