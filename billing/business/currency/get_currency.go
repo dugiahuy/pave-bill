@@ -16,10 +16,15 @@ func (b *business) GetCurrency(ctx context.Context, code string) (*model.Currenc
 		return nil, &errs.Error{Code: errs.NotFound, Message: "currency not supported"}
 	}
 
+	rate, err := dbCurrency.Rate.Float64Value()
+	if err != nil && !dbCurrency.Rate.Valid {
+		return nil, &errs.Error{Code: errs.Internal, Message: "invalid currency rate"}
+	}
+
 	currency := &model.CurrencyInfo{
 		ID:      dbCurrency.ID,
 		Code:    dbCurrency.Code.String,
-		Rate:    parseNumeric(dbCurrency.Rate),
+		Rate:    rate.Float64,
 		Enabled: dbCurrency.Enabled,
 	}
 
