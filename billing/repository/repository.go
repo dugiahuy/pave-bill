@@ -23,12 +23,3 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 		Currencies: currencies.New(db),
 	}
 }
-
-func (r *Repository) WithTx(tx interface{}) *Repository {
-	// This is a placeholder for transaction support
-	return &Repository{
-		Bills:      r.Bills,
-		LineItems:  r.LineItems,
-		Currencies: r.Currencies,
-	}
-}

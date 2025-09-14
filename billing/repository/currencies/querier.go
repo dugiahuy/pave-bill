@@ -11,11 +11,8 @@ import (
 )
 
 type Querier interface {
-	CreateCurrency(ctx context.Context, arg CreateCurrencyParams) (Currency, error)
-	GetAllEnabledCurrencies(ctx context.Context) ([]Currency, error)
 	// Currencies related queries
 	GetCurrency(ctx context.Context, code pgtype.Text) (Currency, error)
-	UpdateCurrencyRate(ctx context.Context, arg UpdateCurrencyRateParams) (Currency, error)
 }
 
 var _ Querier = (*Queries)(nil)
