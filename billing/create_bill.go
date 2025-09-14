@@ -68,8 +68,13 @@ func (r *CreateBillRequest) Validate() error {
 		if r.EndTime.Before(time.Now()) {
 			return &errs.Error{Code: errs.InvalidArgument, Message: "end_time must be in the future"}
 		}
-	} else {
+
 		if r.EndTime.Before(r.StartTime) {
+			return &errs.Error{Code: errs.InvalidArgument, Message: "end_time must be after start_time"}
+		}
+	} else {
+		// StartTime is zero (will be set to now in the API)
+		if r.EndTime.Before(time.Now()) {
 			return &errs.Error{Code: errs.InvalidArgument, Message: "end_time must be after start_time"}
 		}
 	}

@@ -23,7 +23,6 @@ func (s *Service) CloseBill(ctx context.Context, id int32, req *CloseBillRequest
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "invalid bill ID"}
 	}
 
-	// Close the bill using the domain service, which returns the full bill with line items
 	err := s.business.CloseBill(ctx, id, req.Reason)
 	if err != nil {
 		rlog.Error("failed to close bill", "error", err, "id", id)
