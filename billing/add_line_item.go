@@ -25,7 +25,7 @@ type LineItemResponse struct {
 }
 
 // encore:api public path=/v1/bills/:id/line_items method=POST tag:idempotency
-func (s *Service) CreateLineItem(ctx context.Context, id int32, req *CreateLineItemRequest) (*LineItemResponse, error) {
+func (s *Service) AddLineItem(ctx context.Context, id int32, req *CreateLineItemRequest) (*LineItemResponse, error) {
 	if id <= 0 {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "invalid bill ID"}
 	}
