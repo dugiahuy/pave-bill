@@ -11,7 +11,7 @@ import (
 
 // Close handles closing a bill with proper locking, state transitions, and error handling
 func (b *business) CloseBill(ctx context.Context, id int32, reason string) error {
-	return b.stateMachine.ExecuteWithLock(ctx, id, func(currentBill bills.Bill) error {
+	return b.stateMachine.GetBillWithLock(ctx, id, func(currentBill bills.Bill) error {
 		switch currentBill.Status {
 		case string(model.BillStatusPending):
 			return b.stateMachine.TransitionToClosedTx(ctx, id, reason)
@@ -30,20 +30,15 @@ func (b *business) CloseBill(ctx context.Context, id int32, reason string) error
 			if err != nil {
 				// Set error status
 				errorMsg := "failed to calculate final bill total: " + err.Error()
-				return b.stateMachine.TransitionToFailureStateTx(ctx, id, errorMsg)
+				failureErr := b.stateMachine.TransitionToFailureStateTx(ctx, id, errorMsg)
+				if failureErr != nil {
+					return failureErr // Return failure transition error if it fails
+				}
+				return &errs.Error{Code: errs.Internal, Message: errorMsg} // Return original error
 			}
 
 			// Step 3: Set final status to closed
 			return b.stateMachine.TransitionToClosedTx(ctx, id, reason)
-
-		case string(model.BillStatusClosed):
-			return &errs.Error{Code: errs.InvalidArgument, Message: "bill is already closed"}
-
-		case string(model.BillStatusClosing):
-			return &errs.Error{Code: errs.InvalidArgument, Message: "bill is already being closed"}
-
-		case string(model.BillStatusAttentionRequired):
-			return &errs.Error{Code: errs.InvalidArgument, Message: "bill is in error state and cannot be closed"}
 
 		default:
 			return &errs.Error{Code: errs.InvalidArgument, Message: "invalid bill status for closure"}

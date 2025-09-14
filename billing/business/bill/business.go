@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"encore.app/billing/business/currency"
-	"encore.app/billing/domain"
+	domain "encore.app/billing/domain/bill_state_machine"
 	"encore.app/billing/model"
 	"encore.app/billing/repository/bills"
 	"encore.app/billing/repository/lineitems"
@@ -26,16 +26,16 @@ type Business interface {
 type business struct {
 	billRepo        bills.Querier
 	lineItemRepo    lineitems.Querier
+	stateMachine    domain.StateMachine
 	currencyService currency.Business
-	stateMachine    *domain.BillStateMachine
 }
 
 // NewBillBusiness creates a new unified bill business layer
 func NewBillBusiness(
 	billRepo bills.Querier,
 	lineItemRepo lineitems.Querier,
+	stateMachine domain.StateMachine,
 	currencyService currency.Business,
-	stateMachine *domain.BillStateMachine,
 ) Business {
 	return &business{
 		billRepo:        billRepo,
