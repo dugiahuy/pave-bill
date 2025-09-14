@@ -21,7 +21,7 @@ type GetBillsResponse struct {
 }
 
 // encore:api public path=/v1/bills method=GET
-func (s *Service) GetBills(ctx context.Context, req *GetBillsRequest) (*GetBillsResponse, error) {
+func (s *Service) ListBills(ctx context.Context, req *GetBillsRequest) (*GetBillsResponse, error) {
 	if req.Limit <= 0 {
 		req.Limit = 10
 	}
