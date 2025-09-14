@@ -13,9 +13,8 @@ import (
 
 	"encore.app/billing/business/bill"
 	"encore.app/billing/business/currency"
-	"encore.app/billing/domain"
+	domain "encore.app/billing/domain/bill_state_machine"
 	"encore.app/billing/repository"
-	"encore.app/billing/repository/bills"
 	"encore.app/billing/workflow"
 )
 
@@ -45,8 +44,8 @@ func initService() (*Service, error) {
 	}
 
 	currencyBusiness := currency.NewCurrencyBusiness(repo.Currencies)
-	billStateMachine := domain.NewBillStateMachine(pgxdb, repo.Bills.(*bills.Queries))
-	billService := bill.NewBillBusiness(repo.Bills, repo.LineItems, currencyBusiness, billStateMachine)
+	billStateMachine := domain.NewBillStateMachine(pgxdb, repo.Bills, repo.LineItems)
+	billService := bill.NewBillBusiness(repo.Bills, repo.LineItems, billStateMachine, currencyBusiness)
 
 	// Set activity dependencies for Temporal workflows
 	workflow.SetActivityDependencies(billService)

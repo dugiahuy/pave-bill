@@ -18,10 +18,10 @@ func BillingPeriod(ctx workflow.Context, params BillingPeriodWorkflowParams) err
 	logger := workflow.GetLogger(ctx)
 	logger.Info("Starting billing period workflow", "billID", params.BillID, "startTime", params.StartTime, "endTime", params.EndTime)
 
-	// Wait until StartTime if it's in the future
+	startTime := params.StartTime
 	now := workflow.Now(ctx)
-	if params.StartTime.After(now) {
-		waitDuration := params.StartTime.Sub(now)
+	if startTime.After(now) {
+		waitDuration := startTime.Sub(now)
 		logger.Info("Waiting for start time", "billID", params.BillID, "waitDuration", waitDuration)
 		err := workflow.Sleep(ctx, waitDuration)
 		if err != nil {
@@ -30,21 +30,17 @@ func BillingPeriod(ctx workflow.Context, params BillingPeriodWorkflowParams) err
 		logger.Info("Start time reached, beginning active period", "billID", params.BillID)
 	}
 
-	// Calculate duration from StartTime to EndTime
 	activeDuration := params.EndTime.Sub(params.StartTime)
 	if activeDuration <= 0 {
 		logger.Warn("End time is before start time, closing immediately", "billID", params.BillID)
 		return closeBill(ctx, params.BillID, "invalid_period")
 	}
 
-	// Create timer for auto-close at EndTime
 	timer := workflow.NewTimer(ctx, activeDuration)
 
-	// Signal channels
 	addLineItemCh := workflow.GetSignalChannel(ctx, AddLineItemSignalName)
 	closeBillCh := workflow.GetSignalChannel(ctx, CloseBillSignalName)
 
-	// Activate the bill when entering active period
 	err := activateBill(ctx, params.BillID)
 	if err != nil {
 		logger.Error("Failed to activate bill", "billID", params.BillID, "error", err)
@@ -55,19 +51,15 @@ func BillingPeriod(ctx workflow.Context, params BillingPeriodWorkflowParams) err
 
 	logger.Info("Entering active billing period", "billID", params.BillID, "duration", activeDuration)
 
-	// Process signals and timer until bill is closed
 	for !billClosed {
 		selector := workflow.NewSelector(ctx)
 
-		// Handle AddLineItem signal (for tracking only - actual processing done synchronously in API)
 		selector.AddReceive(addLineItemCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal AddLineItemSignal
 			c.Receive(ctx, &signal)
 			logger.Info("Tracking line item addition", "billID", params.BillID, "lineItemID", signal.LineItemID)
-			// This is just for tracking - the actual line item was already processed synchronously
 		})
 
-		// Handle manual CloseBill signal
 		selector.AddReceive(closeBillCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal CloseBillSignal
 			c.Receive(ctx, &signal)
@@ -82,7 +74,6 @@ func BillingPeriod(ctx workflow.Context, params BillingPeriodWorkflowParams) err
 			}
 		})
 
-		// Handle auto-close timer
 		selector.AddFuture(timer, func(f workflow.Future) {
 			logger.Info("Auto-closing bill due to end time reached", "billID", params.BillID)
 
@@ -95,7 +86,6 @@ func BillingPeriod(ctx workflow.Context, params BillingPeriodWorkflowParams) err
 			}
 		})
 
-		// Wait for one of the events
 		selector.Select(ctx)
 	}
 
