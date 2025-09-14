@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"time"
 
 	"encore.dev/beta/errs"
@@ -74,6 +75,7 @@ func extractIdempotencyKey(req middleware.Request) (string, *errs.Error) {
 		}
 	}
 
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	if len(idempotencyKey) == 0 {
 		return "", &errs.Error{Code: errs.InvalidArgument, Message: "X-Idempotency-Key header is required"}
 	}
