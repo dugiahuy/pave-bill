@@ -54,7 +54,7 @@ The workflow started at the beginning of a fee period, at the end of the billing
 #### 1. **As a user I want to Create new bill with a defined billing period and currency.** Analysis requirements:
 ##### a. **Multi-Currency Support (USD/GEL)**: 
 <details>
-<summary>**Analysis**</summary>
+<summary><b>Analysis</b></summary>
 “Able to handle different types of currency, for the sake of simplicity, assume GEL and USD”. In the realworld scenario, most billing system typically require invoices in single currency for legal/tax purposes. So Bill is in either USD or GEL. In my interpretation, for support multi-currency:
             
 - Interpretation 1: Line Item currency must match bill currency.
@@ -64,69 +64,65 @@ The workflow started at the beginning of a fee period, at the end of the billing
 In requirement 4, it only mention “Reject line item addition if bill is closed”, I assume no rejection if the Line Item currency is not match Bill currency. So the same Bill can have different currency Line Item (Interpretation 2). I think it’d be helpful if we also handle the Interpretation 3 to make our Fees API more flexible and complete. However, handling FX conversion quite complex and include volatility risk, so I will only using FIXED conversion rate in this coding challenge as USD to GEL is 2.70 as limited scope for homework.
 </details>
 <br/>
-<b>>Assumption</b> : Bill is in either USD or GEL. Line Item could be multi-currency. Conversion/Consolidation will be calculated when bill is closed with fixed conversion rate
+<b>Assumption</b>: Bill is in either USD or GEL. Line Item could be multi-currency. Conversion/Consolidation will be calculated when bill is closed with fixed conversion rate
         
-    2. **Billing Period Consideration**: 
-        <details>
-        <summary>**Analysis**</summary>
-            Base on the requirement that “workflow started at the beginning of a fee period” and “at the end of the billing period, invoice and bill summation should be available”, this suggest:
+##### b. **Billing Period Consideration**: 
+<details>
+<summary><b>Analysis</b></summary>
+Base on the requirement that “workflow started at the beginning of a fee period” and “at the end of the billing period, invoice and bill summation should be available”, this suggest:
             
-            - There are a defined start and a defined end
-            - Period doesn’t specify
-                - Fixed intervals or arbitrary
-                - Each period must be continuous or can have gaps among periods.
-                - Any duration constraints
+- There are a defined start and a defined end
+- Period doesn’t specify
+    - Fixed intervals or arbitrary
+    - Each period must be continuous or can have gaps among periods.
+    - Any duration constraints
             
-            Given the homework requirements are intentionally open-ended, I’m designing for the most flexible primitive model/feature that meets the core requirement and open to extend to any further requirements such as recurring, fixed period, calendar alignment (beginning of month, end of month, etc.), etc. 
-        </details>
-        <br/>
-        **Assumption**: Billing period can be any length that has a defined start date and end date with UTC time for support global customers. The start and end time must meet following constraints:
-        
-        - Start time must be either now or future.
-        - End time must be greater than start time.
-    3. **Bill Creation** contains following parameters:
-        - Start time
-            - must be in the future
-            - nil - indicate start immediately
-        - End time
-            - must be in the future and greater than start time
-        
-        **⇒ Assumption**: 
-        
-        - The future timing currently don’t have any limit time, so basically user can create infinite time in the future, so that I will limit it within 30 days.
-        - We do support international timezone, but handle it in this homework will be overkilled. Therefore, all timing will use UTC.
-        - Imagine user have multiple bank account, and each bank account may charge different fee rate depend on the account type. Therefore, for one user they have multiple concurrent open bill.
-        
-        ⇒ Constraints:
-        
-        - Cannot create bills for past periods
-        - Cannot add line items outside active period (Requirement 4)
-2. **As a user, I want to add line item to existing open bills to progressively accumulate fees throughout the billing period.** Line item considerations:
-a. Minimal Line Item 
+Given the homework requirements are intentionally open-ended, I’m designing for the most flexible primitive model/feature that meets the core requirement and open to extend to any further requirements such as recurring, fixed period, calendar alignment (beginning of month, end of month, etc.), etc. 
+</details>
+<br/>
+<b>Assumption</b>: Billing period can be any length that has a defined start date and end date with UTC time for support global customers. The start and end time must meet following constraints:        
+- Start time must be either now or future.
+- End time must be greater than start time.
     
-    ```json
-    {
-    	"bill_id": "bill_id",
-    	"currency": "USD", 
-      "amount_cents": 2550,
-      "description": "Wire transfer fee",
-      "reference_id": "txn_123",       
-      "created_at": "2024-01-15T10:30:00Z"
-      "metadata": {
-    	  "original_amount_cents": 5000,
-    	  "original_currency": "GEL",
-    	  "exchange_rate": 0.37
-      }
-    }
-    ```
-    
+##### c. **Bill Creation** contains following parameters:
+- Start time
+    - must be in the future
+    - nil - indicate start immediately
+- End time
+    - must be in the future and greater than start time
+        
+<b>Assumption</b>:         
+- The future timing currently don’t have any limit time, so basically user can create infinite time in the future, so that I will limit it within 30 days.
+- We do support international timezone, but handle it in this homework will be overkilled. Therefore, all timing will use UTC.
+- Imagine user have multiple bank account, and each bank account may charge different fee rate depend on the account type. Therefore, for one user they have multiple concurrent open bill.
+        
+<b>Constraints</b>:
+- Cannot create bills for past periods
+- Cannot add line items outside active period (Requirement 4)
+
+#### 2. **As a user, I want to add line item to existing open bills to progressively accumulate fees throughout the billing period.** 
 
 In the scope of homework, I choose to have minimal line item. The line item could be in any supported currencies (USD/GEL) and will convert amount to match with bill currency.
+```json
+{
+	"bill_id": "bill_id",
+	"currency": "USD", 
+    "amount_cents": 2550,
+    "description": "Wire transfer fee",
+    "reference_id": "txn_123",       
+    "created_at": "2024-01-15T10:30:00Z",
+    "metadata": {
+	  "original_amount_cents": 5000,
+	  "original_currency": "GEL",
+	  "exchange_rate": 0.37
+    }
+}
+```
+    
 
-1. **As a user, I want to close an active bill to finalize charges with all line items. The additional line item that add after bill is closed will be rejected.**
+#### 3. **As a user, I want to close an active bill to finalize charges with all line items. The additional line item that add after bill is closed will be rejected.**
 
-**⇒ Assumption**:
-
+<b>Assumption</b>:
 - Bill becomes immutable after user make close request.
 - Perform final calculations.
 - Handle different types of currency (Requirement 6)
@@ -136,29 +132,23 @@ In the scope of homework, I choose to have minimal line item. The line item coul
     - Scheduled base on the end_time reached
     - Manual by user requests
 
-⇒ Some extra cases:
+<b>Extra cases</b>:
 
 - Bill is active but no fees accrued. No specific requirement, so we will allow to close it.
 - Bill is pending. User should able to close.
-- Bill calculation failed. It should indicate with failed status. This is
-1. **As a user, I want to query open and closed bill.**
+- Bill calculation failed or infrastructure failure. It should indicate with `attention_required` status.
 
-⇒ Assumption:
+#### 4. **As a user, I want to query open and closed bill.**
 
+<b>Assumption</b>:
 - Return bill information with given bill id.
 - In the realworld application, the user only able to query the bills of themself. In the limited scope of homework, we won’t handle the authentication and authorization.
-
-## Estimations & Architecture Characteristic
-
-Usually when I design a feature/system, I would need to estimate how many user we will support, how the system will grow, etc.. Because the system that design for 100k, 1 million, 100 million users is significantly different. Capacity planning for each feature/system is essential to validate its feasibility, prevent operational bottleneck, and ensure it can effectively meet future demand. And the architecture characteristic is the driving forces for making decisions of the design.
-
-However, in the limited scope of homework, my main focus will be complete all functionalities of the API instead of focus on those non-functional requirements.
 
 # Design
 
 ## Database Model
 
-![Pave Bill Design.png](Bill%20System%20design%2025c9279825658092b357e774fef418ef/Pave_Bill_Design.png)
+![Pave Bill DB table.png](docs/Pave_Bill_DB_table.png)
 
 ### Bills table
 
@@ -183,7 +173,7 @@ Using integer could have better performance and less storage, but in homework sc
 
 **Bill State Machine**
 
-![Screenshot 2025-09-06 at 1.04.52 AM.png](Bill%20System%20design%2025c9279825658092b357e774fef418ef/Screenshot_2025-09-06_at_1.04.52_AM.png)
+![Bill state machine.png](docs/bill_state_machine.png)
 
 ### Line Items table
 
@@ -228,7 +218,7 @@ The `currencies` table acts as a reference for all supported currencies within
 
 # High Level Diagrams
 
-![Screenshot 2025-09-16 at 5.06.06 PM.png](Bill%20System%20design%2025c9279825658092b357e774fef418ef/Screenshot_2025-09-16_at_5.06.06_PM.png)
+![Architecture.png](docs/architecture.png)
 
 Architecture Layers & Responsibilities:
 
@@ -239,7 +229,7 @@ Architecture Layers & Responsibilities:
 - Responsibility: Ensure request is applied only once, even if request received multiple times due to network retries or other issues.
 - Sequence diagram
 
-![swimlanes-837cc9f75d24a3403f25425f98e11cf3.png](Bill%20System%20design%2025c9279825658092b357e774fef418ef/swimlanes-837cc9f75d24a3403f25425f98e11cf3.png)
+![Idempotency Sequence.png](docs/idempotency_sequence.png)
 
 Note: In a real-world scenario, the idempotency middleware would require distributed locking to prevent race conditions. For simplicity, distributed lock implementation was intentionally omitted, so this middleware only handles sequential duplicate requests correctly.
 
@@ -270,6 +260,10 @@ Note: In a real-world scenario, the idempotency middleware would require distrib
 - Temporal Client: Workflow execution
 - BillingPeriodWorkflow: Async lifecycle management
 - Responsibility: Time-based operations, signals
+
+## Billing Complete LifeCycle Flow
+
+![Billing Complete LifeCycle Flow.png](docs/complete_lifecycle_flow.png)
 
 ## API Contracts
 
