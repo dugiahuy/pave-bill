@@ -157,7 +157,6 @@ The `bills` table stores information about each customer's bill. A single reco
 | Attribute | Data Type | Constraints | Description |
 | --- | --- | --- | --- |
 | id | serial | primary key | A unique, auto-increment integer for each bill. I use integer for better performance and less storage. The tradeoff is more susceptible to enumeration attracts but we can prevent it by authentication and authorization layer base on user token. |
-| user_id | int | foreign key | Referencing [users.id](http://users.id) |
 | currency | varchar(4) | not null | ISO 4217 currency code (e.g: USD, GEL) |
 | status | varchar(20) | not null | The current state of bill. Statuses are: `pending`, `active`, `closing`, `closed`, `cancelled`, `failed`. 
 Using integer could have better performance and less storage, but in homework scope I want to use text for clarity, we can consider migrate it into integer if required in the future. |
@@ -189,8 +188,7 @@ The `line_items` table stores individual charges that make up a single bill. E
 | incurred_at | timestampz | not null | The specific time the charge was incurred. `timestampz` ensures accuracy across different time zones and is vital for chronological auditing. |
 | reference | text | nullable | An optional reference to an external system, such as a transaction ID from a payment gateway. `text` provides flexibility for various external formats. |
 | idempotency_key | text | not null, unique | A unique client-generated key for preventing duplicate line item additions. Rationale: Similar to the `bills` table, this is a critical safeguard for state-changing financial operations. It is `NOT NULL` to enforce its presence and ensure data consistency. |
-| metadata | jsonb | default: {} | The metadata storing extra information of line item (e.g: store original amount_cents in different currency with the bill)
-`{ original_amount_cents: 1000, original_currency: GEL, exchange_rates: 0.3331 }` |
+| metadata | jsonb | default: {} | The metadata storing extra information of line item (e.g: store original amount_cents in different currency with the bill) `{ original_amount_cents: 1000, original_currency: GEL, exchange_rates: 0.3331 }` |
 | created_at | timestampz | nullable | Automatically populated when record created |
 | updated_at  | timestampz | nullable  | Automatically populated when record updated |
 
@@ -208,19 +206,10 @@ The `currencies` table acts as a reference for all supported currencies within
 | created_at | timestampz | nullable | Automatically populated when record created |
 | updated_at  | timestampz | nullable  | Automatically populated when record updated |
 
-### Users table
-
-| Attribute | Data Type | Constraints | Description |
-| --- | --- | --- | --- |
-| id | serial | primary key | The internal, auto-incrementing integer identifier for each user. This is never exposed to external systems. |
-| external_id | text | not null, unique | A globally unique, non-sequential identifier for user. This is for safely exposed to public-facing APIs, URLs, external services, etc. It will generate when user created. |
-| name | text | nullable | User name |
 
 # High Level Diagrams
 
 ![Architecture.png](docs/architecture.png)
-
-Architecture Layers & Responsibilities:
 
 ## Architecture layers and Responsibilities
 
@@ -317,7 +306,7 @@ Response:
         - `X-Idempotency-Key: "1af534c9-6f44-4efb-91d8-13ad743e2526"`
 - Error - Missing `X-Idempotency-Key` header
     - Status Code: `422` - Unprocessable Entity
-    - Error response
+    - Error response sample
     
     ```json
     {
@@ -328,12 +317,12 @@ Response:
     
 - Error - Invalid parameters
     - Status Code: `400` - Bad request
-    - Error response
+    - Error response sample
     
     ```json
     {
-    	"code": "",
-    	"message": ""
+    	"code": "invalid_argument",
+    	"message": "end_time must be greater than start_time"
     }
     ```
     
@@ -357,9 +346,9 @@ Request body:
 ```json
 {
 	"currency": "GEL",
-  "amount_cents": 1000,
-  "description": "Pavebank fee",
-  "reference_id": "abc123
+    "amount_cents": 1000,
+    "description": "Pavebank fee",
+    "reference_id": "abc123"
 }
 ```
 
@@ -399,7 +388,7 @@ Response:
         - `X-Idempotency-Key: "1af534c9-6f44-4efb-91d8-13ad743e2526"`
 - Error - Missing `X-Idempotency-Key` header
     - Status Code: `422` - Unprocessable Entity
-    - Error response
+    - Error response sample
     
     ```json
     {
@@ -410,7 +399,7 @@ Response:
     
 - Error - Invalid parameters
     - Status Code: `400` - Bad request
-    - Error response
+    - Error response sample
     
     ```json
     {
@@ -490,7 +479,7 @@ Response:
         - `X-Idempotency-Key: "1af534c9-6f44-4efb-91d8-13ad743e2526"`
 - Error - Missing `X-Idempotency-Key` header
     - Status Code: `422` - Unprocessable Entity
-    - Error response
+    - Error response sample
     
     ```json
     {
@@ -501,7 +490,7 @@ Response:
     
 - Error - Invalid parameters
     - Status Code: `400` - Bad request
-    - Error response
+    - Error response sample
     
     ```json
     {
