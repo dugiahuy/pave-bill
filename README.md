@@ -1,193 +1,648 @@
-# REST API Starter
+# Bill System design
 
-This is a RESTful API Starter with a single Hello World API endpoint.
+Created by: Huy Du
+Created time: August 27, 2025 9:45 PM
+Last updated time: September 16, 2025 9:47 PM
+
+# Self research about Encore and Temporal
+
+This section is for my self-learning about this new framework and technology. You can skip it into the next section for focusing on the homework.
+
+## Encore
+
+It make me feel like Ruby on Rails for Golang with the next level of simplicity for modern sophisticated applications. Reduce significantly amount of common coding semantic things such as define API, pubsub, workers, cronjobs, secret, database integration, monitoring, tracing, visualized diagrams, etc.
+
+### Concept
+
+- Support productive Local Development including testing with built-in tools that mimic the production infrastructure.
+- DevOps friendly for developer: automatic infra provisioning, built-in metrics, tracing & monitoring.
+- Automatic documentation & architecture diagrams by code.
+
+### Features
+
+- Turn any function into an API with a single annotation
+- Built-in integration for database, pubsub, cache, cronjob, secrets — like plug and play.
+- Automatically generate architecture diagrams, visualized tracing.
+
+## Temporal
+
+Help to dealing with complication of distributed system by guarantee durable execution.
+
+- Built-in retries and timeouts mechanism
+- Automatically maintains application state and recovers from failure
+
+### Features
+
+- **Workflows** are
+    - fundamental building block for business logic, benefit from the durable execution of Temporal.
+    - stateful and resilient to failure. they’re able to running for long periods of time
+- **Activities** are functions for used for failure-prone operations. Basically it’s Workflow execution.
+- **Temporal Service** manages and tracks related to Workflows and Activities
+    - maintain and durably persists the Event History for each execution
+- **Temporal Worker** responsible for executing Workflow and Activity code
+    - polls for tasks and communicates status with Temporal Service
+- **Temporal Signal** is an asynchronous message sent to a running Workflow Execution to change its state and control its flow
+
+# Background
+
+## Functional Requirement
+
+### Use cases
+
+The workflow started at the beginning of a fee period, at the end of the billing period, the total invoice and bill summation should be available. It mean the bill will be created with specified start date and end date. Therefore, I won’t cover recurring billing rule, just focus on single bill in this design. 
+
+#### 1. **As a user I want to Create new bill with a defined billing period and currency.** Analysis requirements:
+##### a. **Multi-Currency Support (USD/GEL)**: 
+<details>
+<summary>**Analysis**</summary>
+“Able to handle different types of currency, for the sake of simplicity, assume GEL and USD”. In the realworld scenario, most billing system typically require invoices in single currency for legal/tax purposes. So Bill is in either USD or GEL. In my interpretation, for support multi-currency:
+            
+- Interpretation 1: Line Item currency must match bill currency.
+- Interpretation 2: Same bill can have different currency Line Item. Therefore, bill total needs conversion/consolidation.
+- Interpretation 3: For example Bill is in in USD, but user can pay in GEL. Therefore, system need to handle FX conversion.
+            
+In requirement 4, it only mention “Reject line item addition if bill is closed”, I assume no rejection if the Line Item currency is not match Bill currency. So the same Bill can have different currency Line Item (Interpretation 2). I think it’d be helpful if we also handle the Interpretation 3 to make our Fees API more flexible and complete. However, handling FX conversion quite complex and include volatility risk, so I will only using FIXED conversion rate in this coding challenge as USD to GEL is 2.70 as limited scope for homework.
+</details>
+<br/>
+<b>>Assumption</b> : Bill is in either USD or GEL. Line Item could be multi-currency. Conversion/Consolidation will be calculated when bill is closed with fixed conversion rate
+        
+    2. **Billing Period Consideration**: 
+        <details>
+        <summary>**Analysis**</summary>
+            Base on the requirement that “workflow started at the beginning of a fee period” and “at the end of the billing period, invoice and bill summation should be available”, this suggest:
+            
+            - There are a defined start and a defined end
+            - Period doesn’t specify
+                - Fixed intervals or arbitrary
+                - Each period must be continuous or can have gaps among periods.
+                - Any duration constraints
+            
+            Given the homework requirements are intentionally open-ended, I’m designing for the most flexible primitive model/feature that meets the core requirement and open to extend to any further requirements such as recurring, fixed period, calendar alignment (beginning of month, end of month, etc.), etc. 
+        </details>
+        <br/>
+        **Assumption**: Billing period can be any length that has a defined start date and end date with UTC time for support global customers. The start and end time must meet following constraints:
+        
+        - Start time must be either now or future.
+        - End time must be greater than start time.
+    3. **Bill Creation** contains following parameters:
+        - Start time
+            - must be in the future
+            - nil - indicate start immediately
+        - End time
+            - must be in the future and greater than start time
+        
+        **⇒ Assumption**: 
+        
+        - The future timing currently don’t have any limit time, so basically user can create infinite time in the future, so that I will limit it within 30 days.
+        - We do support international timezone, but handle it in this homework will be overkilled. Therefore, all timing will use UTC.
+        - Imagine user have multiple bank account, and each bank account may charge different fee rate depend on the account type. Therefore, for one user they have multiple concurrent open bill.
+        
+        ⇒ Constraints:
+        
+        - Cannot create bills for past periods
+        - Cannot add line items outside active period (Requirement 4)
+2. **As a user, I want to add line item to existing open bills to progressively accumulate fees throughout the billing period.** Line item considerations:
+a. Minimal Line Item 
+    
+    ```json
+    {
+    	"bill_id": "bill_id",
+    	"currency": "USD", 
+      "amount_cents": 2550,
+      "description": "Wire transfer fee",
+      "reference_id": "txn_123",       
+      "created_at": "2024-01-15T10:30:00Z"
+      "metadata": {
+    	  "original_amount_cents": 5000,
+    	  "original_currency": "GEL",
+    	  "exchange_rate": 0.37
+      }
+    }
+    ```
+    
+
+In the scope of homework, I choose to have minimal line item. The line item could be in any supported currencies (USD/GEL) and will convert amount to match with bill currency.
+
+1. **As a user, I want to close an active bill to finalize charges with all line items. The additional line item that add after bill is closed will be rejected.**
+
+**⇒ Assumption**:
+
+- Bill becomes immutable after user make close request.
+- Perform final calculations.
+- Handle different types of currency (Requirement 6)
+    - For Line Item
+    - Bill could be paid in different currency, but because homework didn’t mention it. Therefore, we won’t do the currency conversion for the final bill amount.
+- Possible triggers could be:
+    - Scheduled base on the end_time reached
+    - Manual by user requests
+
+⇒ Some extra cases:
+
+- Bill is active but no fees accrued. No specific requirement, so we will allow to close it.
+- Bill is pending. User should able to close.
+- Bill calculation failed. It should indicate with failed status. This is
+1. **As a user, I want to query open and closed bill.**
+
+⇒ Assumption:
+
+- Return bill information with given bill id.
+- In the realworld application, the user only able to query the bills of themself. In the limited scope of homework, we won’t handle the authentication and authorization.
+
+## Estimations & Architecture Characteristic
+
+Usually when I design a feature/system, I would need to estimate how many user we will support, how the system will grow, etc.. Because the system that design for 100k, 1 million, 100 million users is significantly different. Capacity planning for each feature/system is essential to validate its feasibility, prevent operational bottleneck, and ensure it can effectively meet future demand. And the architecture characteristic is the driving forces for making decisions of the design.
+
+However, in the limited scope of homework, my main focus will be complete all functionalities of the API instead of focus on those non-functional requirements.
+
+# Design
+
+## Database Model
+
+![Pave Bill Design.png](Bill%20System%20design%2025c9279825658092b357e774fef418ef/Pave_Bill_Design.png)
+
+### Bills table
+
+The `bills` table stores information about each customer's bill. A single record represents a billing period for a user, tracking its overall status, total amount due, and key timestamps. This table is the central hub for managing the billing cycle.
+
+| Attribute | Data Type | Constraints | Description |
+| --- | --- | --- | --- |
+| id | serial | primary key | A unique, auto-increment integer for each bill. I use integer for better performance and less storage. The tradeoff is more susceptible to enumeration attracts but we can prevent it by authentication and authorization layer base on user token. |
+| user_id | int | foreign key | Referencing [users.id](http://users.id) |
+| currency | varchar(4) | not null | ISO 4217 currency code (e.g: USD, GEL) |
+| status | varchar(20) | not null | The current state of bill. Statuses are: `pending`, `active`, `closing`, `closed`, `cancelled`, `failed`. 
+Using integer could have better performance and less storage, but in homework scope I want to use text for clarity, we can consider migrate it into integer if required in the future. |
+| close_reason | text | nullable | Closure reason capture the transition whether `manual_close`, `automatic_close`, `close_before_start`, etc. |
+| error_message | text | nullable | Error details when the closing is failed. |
+| total_amount_cents | bigint | nullable | The total amount of bill, stored in smallest currency unit. Rationale: Using `bigint` for financial data is critical to avoid floating-point inaccuracies and precision errors. We will ensure the currency conversion will be happen at application layer, and store the rounded amount into DB. |
+| start_time | timestampz | not null | The start time of billing period. Using timestamp with timezone and store in UTC. |
+| end_time | timestampz | not null | The end time of billing period. Using timestamp with timezone and store in UTC. |
+| billed_at | timestampz | nullable | The timestamp when the bill is closed. Using timestamp with timezone and store in UTC. |
+| idempotency_key | text | not null, unique | A unique key generated by client to prevent duplicate bill creation requests. Rationale: making this a required and unique field is a strict safety measure to ensure that a bill is only created once, even if the client retries the request. |
+| created_at | timestampz | nullable | Automatically populated when record created |
+| updated_at  | timestampz | nullable  | Automatically populated when record updated |
+
+**Bill State Machine**
+
+![Screenshot 2025-09-06 at 1.04.52 AM.png](Bill%20System%20design%2025c9279825658092b357e774fef418ef/Screenshot_2025-09-06_at_1.04.52_AM.png)
+
+### Line Items table
+
+The `line_items` table stores individual charges that make up a single bill. Each record represents a specific fee, transaction, or event that occurred within a billing period.
+
+| Attribute | Data Type | Constraints | Description |
+| --- | --- | --- | --- |
+| id | serial | primary key | A unique, auto-incrementing identifier for each line item. |
+| bill_id | int | foreign key | Referencing bills.id |
+| currency | varchar(4) | not null | ISO 4217 currency code (e.g: USD, GEL) |
+| amount_cents | bigint | nullable | The monetary value of the line item, stored in the smallest currency unit. Rationale: Consistent with the `bills` table, using `bigint` prevents floating-point inaccuracies for financial data. It is `NOT NULL` to ensure every line item has a value. |
+| description | text | nullable | Human-readable description of the charge (e.g., `'Subscription Fee'`, `'Payment Processing'`). `text` is a good choice for potentially long strings of text. |
+| incurred_at | timestampz | not null | The specific time the charge was incurred. `timestampz` ensures accuracy across different time zones and is vital for chronological auditing. |
+| reference | text | nullable | An optional reference to an external system, such as a transaction ID from a payment gateway. `text` provides flexibility for various external formats. |
+| idempotency_key | text | not null, unique | A unique client-generated key for preventing duplicate line item additions. Rationale: Similar to the `bills` table, this is a critical safeguard for state-changing financial operations. It is `NOT NULL` to enforce its presence and ensure data consistency. |
+| metadata | jsonb | default: {} | The metadata storing extra information of line item (e.g: store original amount_cents in different currency with the bill)
+`{ original_amount_cents: 1000, original_currency: GEL, exchange_rates: 0.3331 }` |
+| created_at | timestampz | nullable | Automatically populated when record created |
+| updated_at  | timestampz | nullable  | Automatically populated when record updated |
+
+### Currencies table
+
+The `currencies` table acts as a reference for all supported currencies within the system. It stores the currency's code, symbol, and a fixed rate relative to a base currency (USD).
+
+| Attribute | Data Type | Constraints | Description |
+| --- | --- | --- | --- |
+| id | serial | primary key | A unique, auto-incrementing identifier for each currency. |
+| code | varchar(4) | not null, unique | The standard ISO 4217 currency code. The `UNIQUE`constraint ensures no two currencies share the same code. |
+| symbol | varchar(4) | nullable | The symbol of currency (e.g: **`$`, `₾`)** |
+| rate | decimal(18,8) | not null | A fixed exchange rate relative to a base currency (USD). Rationale: `decimal` is the correct data type for exchange rates, as it provides high precision and avoids floating-point errors. A precision of `18` and scale of `8` is robust enough for most currencies. In this scope of this homework, this rate will be fixed and never change. |
+| enabled | boolean | not null, default: false | A flag indicating whether the currency is active and can be used in the system. |
+| created_at | timestampz | nullable | Automatically populated when record created |
+| updated_at  | timestampz | nullable  | Automatically populated when record updated |
+
+### Users table
+
+| Attribute | Data Type | Constraints | Description |
+| --- | --- | --- | --- |
+| id | serial | primary key | The internal, auto-incrementing integer identifier for each user. This is never exposed to external systems. |
+| external_id | text | not null, unique | A globally unique, non-sequential identifier for user. This is for safely exposed to public-facing APIs, URLs, external services, etc. It will generate when user created. |
+| name | text | nullable | User name |
+
+# High Level Diagrams
+
+![Screenshot 2025-09-16 at 5.06.06 PM.png](Bill%20System%20design%2025c9279825658092b357e774fef418ef/Screenshot_2025-09-16_at_5.06.06_PM.png)
+
+Architecture Layers & Responsibilities:
+
+## Architecture layers and Responsibilities
+
+### Middleware Layer - Idempotency
+
+- Responsibility: Ensure request is applied only once, even if request received multiple times due to network retries or other issues.
+- Sequence diagram
+
+![swimlanes-837cc9f75d24a3403f25425f98e11cf3.png](Bill%20System%20design%2025c9279825658092b357e774fef418ef/swimlanes-837cc9f75d24a3403f25425f98e11cf3.png)
+
+Note: In a real-world scenario, the idempotency middleware would require distributed locking to prevent race conditions. For simplicity, distributed lock implementation was intentionally omitted, so this middleware only handles sequential duplicate requests correctly.
+
+### API Layer - Encore Service
+
+- Handler: Receives HTTP requests, validates input
+- Responsibility: Protocol concerns, serialization
+
+### Business Service Layer
+
+- Bill Service: Business orchestration, error handling
+- Responsibility: Coordinate domain operations, manage dependencies, easy to change framework (migrate from Encore)
+
+### Domain Layer
+
+- BillStateMachine: Complex domain operations, transaction management
+- State Machine Logic:
+    - State transitions with row locking to prevent race condition
+    - Transaction management for strong consistency operations
+- Responsibility: Domain logic, atomicity, consistency and aggregate logic between Bill and LineItems Repository
+
+### Repository Layer
+
+- Use sqlc-generated queries - Clean, type-safe SQL operations
+
+### Temporal workflow
+
+- Temporal Client: Workflow execution
+- BillingPeriodWorkflow: Async lifecycle management
+- Responsibility: Time-based operations, signals
+
+## API Contracts
+
+### 1. Create a new bill
+
+Endpoint: `POST /v1/bills`
+
+Description: Create a new bill for a user in specified currency and period.
+
+Request body:
+
+- Required parameters:
+    - `currency` : type string — currency code (ISO-4217)
+    - `end_time` : type string — timestamp (ISO-8601)
+- Optional parameters:
+    - `start_time` : type string — timestamp (ISO-8601)
+        - `start_time` is null mean start the bill immediately.
+
+```json
+{
+	"currency": "GEL",
+	"start_time": "2025-09-06T03:00:00+0000", // could be null
+	"end_time": "2025-10-06T03:00:00+0000",
+}
+```
+
+Required Header:
+
+- `X-Idempotency-Key` : type text — unique key generated by client
+
+Response:
+
+- Success request
+    - Status Code: `201` -  Created
+    - Response body:
+    
+    ```json
+    {
+    	"bill_id": "1",
+      "currency": "GEL",
+      "status": "pending",
+      "total_amount_cents": 0,
+      "start_time": "2025-09-06T03:00:00Z",
+      "end_time": "2025-10-06T03:00:00Z",
+      "created_at": "2025-09-06T02:30:00Z",
+      "line_items": []
+    }
+    ```
+    
+    - Response header:
+        - `X-Idempotency-Key: "1af534c9-6f44-4efb-91d8-13ad743e2526"`
+- Error - Missing `X-Idempotency-Key` header
+    - Status Code: `422` - Unprocessable Entity
+    - Error response
+    
+    ```json
+    {
+    	"code": "idempotency_key_required",
+    	"message": "The 'Idempotency-Key' header is required for this operation."
+    }
+    ```
+    
+- Error - Invalid parameters
+    - Status Code: `400` - Bad request
+    - Error response
+    
+    ```json
+    {
+    	"code": "",
+    	"message": ""
+    }
+    ```
+    
+
+### 2. Add line item to bill
+
+Endpoint: `POST /v1/bills/{bill_id}/line_items`
+
+Description: Create line item with given active bill
+
+Path parameter: `bill_id` - type integer
+
+Request body:
+
+- Required parameters:
+    - `currency` : type string — currency code (ISO-4217)
+    - `amount_cents` : type integer
+    - `description`: type string
+    - `reference_id`: unique identifier of line item
+
+```json
+{
+	"currency": "GEL",
+  "amount_cents": 1000,
+  "description": "Pavebank fee",
+  "reference_id": "abc123
+}
+```
+
+Required Header:
+
+- `X-Idempotency-Key` : type text — unique key generated by client
+
+Response:
+
+- Success request
+    - Status Code: `201` -  Created
+    - Response body:
+    
+    ```json
+    {
+        "line_item": {
+            "id": 1,
+            "bill_id": 1,
+            "amount_cents": 1000,
+            "currency": "USD",
+            "description": "Pave bank fee",
+            "incurred_at": "2009-11-10T23:00:00Z",
+            "reference_id": "pavebank_abc_123",
+            "metadata": {
+                "original_amount_cents": 2650,
+                "original_currency": "GEL",
+                "exchange_rate": 2.65
+            },
+            "idempotency_key": "idempotency_key123",
+            "created_at": "2009-11-10T23:00:00Z",
+            "updated_at": "2009-11-10T23:00:00Z",
+        }
+    }
+    ```
+    
+    - Response header:
+        - `X-Idempotency-Key: "1af534c9-6f44-4efb-91d8-13ad743e2526"`
+- Error - Missing `X-Idempotency-Key` header
+    - Status Code: `422` - Unprocessable Entity
+    - Error response
+    
+    ```json
+    {
+    	"code": "idempotency_key_required",
+    	"message": "The 'Idempotency-Key' header is required for this operation."
+    }
+    ```
+    
+- Error - Invalid parameters
+    - Status Code: `400` - Bad request
+    - Error response
+    
+    ```json
+    {
+      "code": "invalid_argument",
+      "message": "bill is not in active state for adding line items"
+    }
+    ```
+    
+
+### 3. Close bill
+
+Endpoint: `POST /v1/bills/{bill_id}/close`
+
+Description: Close a bill
+
+Path parameter: `bill_id` - type integer
+
+Request body:
+
+- Required parameters:
+    - `reason` : type string — closure reason
+
+```json
+{
+	"reason": "Manual close"
+}
+```
+
+Required Header:
+
+- `X-Idempotency-Key` : type text — unique key generated by client
+
+Response:
+
+- Success request
+    - Status Code: `201` -  Created
+    - Response body:
+    
+    ```json
+    {
+        "bill": {
+            "id": 1,
+            "currency": "GEL",
+            "status": "closed",
+            "close_reason": "Autoclose",
+            "error_message": "", // omitempty
+            "total_amount_cents": 1000,
+            "start_time": "2009-11-10T23:00:00Z",
+            "end_time": "2009-11-10T23:00:00Z",
+            "billed_at": "2009-11-10T23:00:00Z", // omitempty
+            "idempotency_key": "abc123",
+            "workflow_id": "workflow-id",
+            "line_items": [{
+                "id": 1,
+                "bill_id": 1,
+                "amount_cents": 1000,
+                "currency": "GEL",
+                "description": "Pavebank fee",
+                "incurred_at": "2009-11-10T23:00:00Z",
+                "reference_id": "reference_id",
+                "metadata": { // omitempty
+                    "original_amount_cents": 0,
+                    "original_currency": "",
+                    "exchange_rate": 0.0
+                },
+                "idempotency_key": "abc125",
+                "created_at": "2009-11-10T23:00:00Z",
+                "updated_at": "2009-11-10T23:00:00Z",
+            }],
+            "created_at": "2009-11-10T23:00:00Z",
+            "updated_at": "2009-11-10T23:00:00Z"
+        }
+    }
+    ```
+    
+    - Response header:
+        - `X-Idempotency-Key: "1af534c9-6f44-4efb-91d8-13ad743e2526"`
+- Error - Missing `X-Idempotency-Key` header
+    - Status Code: `422` - Unprocessable Entity
+    - Error response
+    
+    ```json
+    {
+    	"code": "idempotency_key_required",
+    	"message": "The 'Idempotency-Key' header is required for this operation."
+    }
+    ```
+    
+- Error - Invalid parameters
+    - Status Code: `400` - Bad request
+    - Error response
+    
+    ```json
+    {
+      "code": "invalid_argument",
+      "message": "bill is not in active state for adding line items"
+    }
+    ```
+    
+
+### 4. Get bill
+
+Endpoint: `GET /v1/bills/{bill_id}`
+
+Description: Retrieve a bill information
+
+Path parameter: `bill_id` - type integer
+
+Response:
+
+```json
+{
+    "bill": {
+        "id": 0,
+        "currency": "",
+        "status": "",
+        "close_reason": "",
+        "error_message": "",
+        "total_amount_cents": 0,
+        "start_time": "2009-11-10T23:00:00Z",
+        "end_time": "2009-11-10T23:00:00Z",
+        "billed_at": "2009-11-10T23:00:00Z",
+        "idempotency_key": "",
+        "workflow_id": "",
+        "line_items": [{
+            "id": 0,
+            "bill_id": 0,
+            "amount_cents": 0,
+            "currency": "",
+            "description": "",
+            "incurred_at": "2009-11-10T23:00:00Z",
+            "reference_id": "",
+            "metadata": {
+                "original_amount_cents": 0,
+                "original_currency": "",
+                "exchange_rate": 0.0
+            },
+            "idempotency_key": "",
+            "created_at": "2009-11-10T23:00:00Z",
+            "updated_at": "2009-11-10T23:00:00Z",
+        }],
+        "created_at": "2009-11-10T23:00:00Z",
+        "updated_at": "2009-11-10T23:00:00Z"
+    }
+}
+```
+
+### 5. List bills
+
+Endpoint: `GET /v1/bills`
+
+Description: Retrieve list of bills
+
+Query parameters:
+
+- `limit` : type integer
+- `offset` : type integer
+
+Response:
+
+```json
+{
+    "bills": [{
+        "id": 0,
+        "currency": "",
+        "status": "",
+        "close_reason": "",
+        "error_message": "",
+        "total_amount_cents": 0,
+        "start_time": "2009-11-10T23:00:00Z",
+        "end_time": "2009-11-10T23:00:00Z",
+        "billed_at": "2009-11-10T23:00:00Z",
+        "idempotency_key": "",
+        "workflow_id": "",
+        "line_items": [{
+            "id": 0,
+            "bill_id": 0,
+            "amount_cents": 0,
+            "currency": "",
+            "description": "",
+            "incurred_at": "2009-11-10T23:00:00Z",
+            "reference_id": "",
+            "metadata": {
+                "original_amount_cents": 0,
+                "original_currency": "",
+                "exchange_rate": 0.0
+            },
+            "idempotency_key": "",
+            "created_at": "2009-11-10T23:00:00Z",
+            "updated_at": "2009-11-10T23:00:00Z",
+        }],
+        "created_at": "2009-11-10T23:00:00Z",
+        "updated_at": "2009-11-10T23:00:00Z"
+    }],
+    "total_count": 0,
+    "limit": 0,
+    "offset": 0
+}
+```
+
+# Encore Server
 
 ## Prerequisites 
 
 **Install Encore:**
 - **macOS:** `brew install encoredev/tap/encore`
-- **Linux:** `curl -L https://encore.dev/install.sh | bash`
-- **Windows:** `iwr https://encore.dev/install.ps1 | iex`
-
-## Create app
-
-Create a local app from this template:
-
-```bash
-encore app create my-app-name --example=hello-world
-```
+**Install Temporal**
+- **macOS:** `brew install temporal`
+**Install sqlc**
+- **macOS:** `brew install sqlc`
 
 ## Generate SQL queries
-Install sqlc:
-```bash
-brew install sqlc
-```
-
 Run this command from your application's root folder:
 ```bash
-sqlc generate -f ./billing/db/sqlc.yaml
+sqlc generate
 ```
 
 ## Run app locally
 
 Run this command from your application's root folder:
 
+- Start Temporal
+```bash
+temporal server start-dev
+```
+
 ```bash
 encore run
-```
-## Using the API
-
-To see that your app is running, you can ping the API.
-
-```bash
-curl http://localhost:4000/hello/World
-```
-
-### Local Development Dashboard
-
-While `encore run` is running, open [http://localhost:9400/](http://localhost:9400/) to access Encore's [local developer dashboard](https://encore.dev/docs/go/observability/dev-dash).
-
-Here you can see traces for all requests that you made, see your architecture diagram (just a single service for this simple example), and view API documentation in the Service Catalog.
-
-## Development
-
-### Add a new service
-
-With Encore.go you can create a new service by creating a regular Go package and then defining at least one API within it. Encore recognizes this as a service, and uses the package name as the service name.
-
-On disk it might look like this:
-
-```
-/my-app
-├── encore.app          // ... and other top-level project files
-│
-├── hello               // hello service (a Go package)
-│   ├── hello.go        // hello service code
-│   └── hello_test.go   // tests for hello service
-│
-└── world               // world service (a Go package)
-    └── world.go        // world service code
-```
-
-Learn more in the docs: https://encore.dev/docs/go/primitives/services
-
-### Create an API endpoint
-
-With Encore.go you can turn a regular Go function into an API endpoint by adding the `//encore:api` annotation to it. This tells Encore that the function should be exposed as an API endpoint and Encore will automatically generate the necessary boilerplate at compile-time.
-
-For example, in this app you app will have a `hello` service with a `Ping` API endpoint:
-
-```go
-//encore:api public path=/hello/:name
-func World(ctx context.Context, name string) (*Response, error) {
-	msg := "Hello, " + name + "!"
-	return &Response{Message: msg}, nil
-}
-
-type Response struct {
-	Message string
-}
-```
-
-You can define different access controls using:
-- `//encore:api public` - Public API endpoint
-- `//encore:api private` - Defines a private API that is never accessible to the outside world. It can only be called from other services in your app
-- `//encore:api auth` - Defines an API that anybody can call, but requires valid authentication
-
-Learn more in the docs: https://encore.dev/docs/go/primitives/defining-apis
-
-### Service-to-service API calls
-
-Calling an API endpoint looks like a regular function call with Encore.go. To call an endpoint you first import the other service as a Go package using `import "encore.app/package-name"`.
-
-In the example below, we import the service `hello` and call the `Ping` endpoint using a function call to `hello.Ping`:
-
-```go
-import "encore.app/hello" // import service
-
-//encore:api public
-func MyOtherAPI(ctx context.Context) error {
-    resp, err := hello.Ping(ctx, &hello.PingParams{Name: "World"})
-    if err == nil {
-        log.Println(resp.Message) // "Hello, World!"
-    }
-    return err
-}
-```
-
-Learn more in the docs: https://encore.dev/docs/go/primitives/api-calls
-
-### Add a database
-
-To create a database, import `encore.dev/storage/sqldb` and call `new SQLDatabase`, assigning the result to a top-level variable. For example:
-
-```go
-import "encore.dev/storage/sqldb"
-
-// Create the todo database and assign it to the "tododb" variable
-var tododb = sqldb.NewDatabase("todo", sqldb.DatabaseConfig{
-	Migrations: "./migrations",
-})
-```
-
-Then create a directory `migrations` inside the service directory and add a migration file `0001_create_table.up.sql` to define the database schema. For example:
-
-```sql
-CREATE TABLE todo_item (
-  id BIGSERIAL PRIMARY KEY,
-  title TEXT NOT NULL,
-  done BOOLEAN NOT NULL DEFAULT false
-  -- etc...
-);
-```
-
-Once you've added a migration, restart your app with `encore run` to start up the database and apply the migration. Keep in mind that you need to have [Docker](https://docker.com) installed and running to start the database.
-
-Learn more in the docs: https://encore.dev/docs/go/primitives/databases
-
-### Learn more
-
-There are many more features to explore in Encore.go, for example:
-
-- [Cron jobs](https://encore.dev/docs/go/primitives/cron-jobs)
-- [Pub/Sub](https://encore.dev/docs/go/primitives/pubsub)
-- [Object Storage](https://encore.dev/docs/go/primitives/object-storage)
-- [Secrets](https://encore.dev/docs/go/primitives/secrets)
-- [Authentication handlers](https://encore.dev/docs/go/develop/auth)
-- [Middleware](https://encore.dev/docs/go/develop/middleware)
-
-## Deployment
-
-### Self-hosting
-
-See the [self-hosting instructions](https://encore.dev/docs/go/self-host/docker-build) for how to use `encore build docker` to create a Docker image and configure it.
-
-### Encore Cloud Platform
-
-Deploy your application to a free staging environment in Encore's development cloud using `git push encore`:
-
-```bash
-git add -A .
-git commit -m 'Commit message'
-git push encore
-```
-
-You can also open your app in the [Cloud Dashboard](https://app.encore.dev) to integrate with GitHub, or connect your AWS/GCP account, enabling Encore to automatically handle cloud deployments for you.
-
-## Link to GitHub
-
-Follow these steps to link your app to GitHub:
-
-1. Create a GitHub repo, commit and push the app.
-2. Open your app in the [Cloud Dashboard](https://app.encore.dev).
-3. Go to **Settings ➔ GitHub** and click on **Link app to GitHub** to link your app to GitHub and select the repo you just created.
-4. To configure Encore to automatically trigger deploys when you push to a specific branch name, go to the **Overview** page for your intended environment. Click on **Settings** and then in the section **Branch Push** configure the **Branch name** and hit **Save**.
-5. Commit and push a change to GitHub to trigger a deploy.
-
-[Learn more in the docs](https://encore.dev/docs/platform/integrations/github)
-
-## Testing
-
-```bash
-encore test ./...
 ```

@@ -58,6 +58,12 @@ func BillingPeriod(ctx workflow.Context, params BillingPeriodWorkflowParams) err
 			var signal AddLineItemSignal
 			c.Receive(ctx, &signal)
 			logger.Info("Tracking line item addition", "billID", params.BillID, "lineItemID", signal.LineItemID)
+			err := updateBillTotal(ctx, params.BillID)
+			if err != nil {
+				logger.Error("Failed to recalculate bill total after line item addition", "billID", params.BillID, "lineItemID", signal.LineItemID, "error", err)
+			} else {
+				logger.Info("Successfully recalculated bill total after line item addition", "billID", params.BillID, "lineItemID", signal.LineItemID)
+			}
 		})
 
 		selector.AddReceive(closeBillCh, func(c workflow.ReceiveChannel, more bool) {
@@ -111,4 +117,14 @@ func activateBill(ctx workflow.Context, billID int32) error {
 	activityCtx := workflow.WithActivityOptions(ctx, activityOptions)
 
 	return workflow.ExecuteActivity(activityCtx, ActivateBillActivity, billID).Get(ctx, nil)
+}
+
+// updateBillTotal executes the UpdateBillTotal activity to recalculate totals
+func updateBillTotal(ctx workflow.Context, billID int32) error {
+	activityOptions := workflow.ActivityOptions{
+		StartToCloseTimeout: time.Minute,
+	}
+	activityCtx := workflow.WithActivityOptions(ctx, activityOptions)
+
+	return workflow.ExecuteActivity(activityCtx, UpdateBillTotalActivity, billID).Get(ctx, nil)
 }
