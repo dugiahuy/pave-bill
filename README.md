@@ -1,8 +1,8 @@
 # Bill System design
 
-Created by: Huy Du
-Created time: August 27, 2025 9:45 PM
-Last updated time: September 16, 2025 9:47 PM
+Created by: Huy Du <br/>
+Created time: August 27, 2025 9:45 PM<br/>
+Last updated time: September 16, 2025 9:47 PM<br/>
 
 # Self research about Encore and Temporal
 
