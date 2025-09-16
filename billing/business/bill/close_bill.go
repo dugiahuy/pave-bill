@@ -13,6 +13,10 @@ import (
 func (b *business) CloseBill(ctx context.Context, id int32, reason string) error {
 	return b.stateMachine.GetBillWithLock(ctx, id, func(currentBill bills.Bill) error {
 		switch currentBill.Status {
+		case string(model.BillStatusClosed):
+			// Bill is already closed - idempotent operation
+			return nil
+
 		case string(model.BillStatusPending):
 			return b.stateMachine.TransitionToClosedTx(ctx, id, reason)
 

@@ -70,9 +70,9 @@ func initTemporal() (client.Client, worker.Worker, error) {
 
 	w.RegisterWorkflow(workflow.BillingPeriod)
 
-	w.RegisterActivity(workflow.AddLineItemActivity)
 	w.RegisterActivity(workflow.CloseBillActivity)
 	w.RegisterActivity(workflow.ActivateBillActivity)
+	w.RegisterActivity(workflow.UpdateBillTotalActivity)
 
 	if err = w.Start(); err != nil {
 		c.Close()

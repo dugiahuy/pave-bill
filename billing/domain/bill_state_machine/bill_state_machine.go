@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -78,20 +79,27 @@ func (sm *BillStateMachine) GetCurrentTx() pgx.Tx {
 
 // transitionWithLock performs a state transition with proper row-level locking and transaction management
 func (sm *BillStateMachine) transitionWithLock(ctx context.Context, id int32, transitionFunc func(bills.Bill) error) error {
-	tx, err := sm.db.Begin(ctx)
+	// Add timeout to prevent hanging on row locks
+	lockCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	tx, err := sm.db.Begin(lockCtx)
 	if err != nil {
 		return &errs.Error{Code: errs.Internal, Message: "failed to start transaction"}
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(lockCtx)
 
 	sm.currentTx = tx
 	sm.billTx = sm.billRepo.(*bills.Queries).WithTx(tx)
 	sm.lineItemTx = sm.lineItemRepo.(*lineitems.Queries).WithTx(tx)
 
-	currentBill, err := sm.billTx.GetBillForUpdate(ctx, id)
+	currentBill, err := sm.billTx.GetBillForUpdate(lockCtx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &errs.Error{Code: errs.NotFound, Message: "bill not found"}
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return &errs.Error{Code: errs.ResourceExhausted, Message: "operation timed out - bill may be locked by another operation"}
 		}
 		return &errs.Error{Code: errs.Internal, Message: "failed to lock bill for state transition"}
 	}
@@ -101,7 +109,10 @@ func (sm *BillStateMachine) transitionWithLock(ctx context.Context, id int32, tr
 		return err
 	}
 
-	if err := tx.Commit(ctx); err != nil {
+	if err := tx.Commit(lockCtx); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return &errs.Error{Code: errs.ResourceExhausted, Message: "commit timed out - operation may have partially completed"}
+		}
 		return &errs.Error{Code: errs.Internal, Message: "failed to commit state transition"}
 	}
 
@@ -128,65 +139,35 @@ func (sm *BillStateMachine) TransitionToActive(ctx context.Context, id int32) er
 
 // TransitionToClosing updates bill status to closing with close reason and row locking
 func (sm *BillStateMachine) TransitionToClosingTx(ctx context.Context, id int32, reason string) error {
-	return sm.transitionWithLock(ctx, id, func(currentBill bills.Bill) error {
-		if currentBill.Status != string(model.BillStatusActive) {
-			return &errs.Error{
-				Code:    errs.InvalidArgument,
-				Message: "bill must be in active status to transition to closing",
-			}
-		}
-
-		_, err := sm.billTx.UpdateBillClosure(ctx, bills.UpdateBillClosureParams{
-			ID:           id,
-			Status:       string(model.BillStatusClosing),
-			CloseReason:  pgtype.Text{String: reason, Valid: true},
-			ErrorMessage: pgtype.Text{Valid: false},
-		})
-		return err
+	_, err := sm.billTx.UpdateBillClosure(ctx, bills.UpdateBillClosureParams{
+		ID:           id,
+		Status:       string(model.BillStatusClosing),
+		CloseReason:  pgtype.Text{String: reason, Valid: true},
+		ErrorMessage: pgtype.Text{Valid: false},
 	})
+	return err
 }
 
 // TransitionToClosed updates bill status to closed with close reason and row locking
 func (sm *BillStateMachine) TransitionToClosedTx(ctx context.Context, id int32, reason string) error {
-	return sm.transitionWithLock(ctx, id, func(currentBill bills.Bill) error {
-		// Validate current state - pending or closing can go to closed
-		if currentBill.Status != string(model.BillStatusPending) && currentBill.Status != string(model.BillStatusClosing) {
-			return &errs.Error{
-				Code:    errs.InvalidArgument,
-				Message: "bill must be in pending or closing status to transition to closed",
-			}
-		}
-
-		_, err := sm.billTx.UpdateBillClosure(ctx, bills.UpdateBillClosureParams{
-			ID:           id,
-			Status:       string(model.BillStatusClosed),
-			CloseReason:  pgtype.Text{String: reason, Valid: true},
-			ErrorMessage: pgtype.Text{Valid: false},
-		})
-		return err
+	_, err := sm.billTx.UpdateBillClosure(ctx, bills.UpdateBillClosureParams{
+		ID:           id,
+		Status:       string(model.BillStatusClosed),
+		CloseReason:  pgtype.Text{String: reason, Valid: true},
+		ErrorMessage: pgtype.Text{Valid: false},
 	})
+	return err
 }
 
 // TransitionToFailureState updates bill to failed or attention_required with error details and row locking
 func (sm *BillStateMachine) TransitionToFailureStateTx(ctx context.Context, id int32, errorMessage string) error {
-	return sm.transitionWithLock(ctx, id, func(currentBill bills.Bill) error {
-		// Can transition to failure state from any non-terminal state
-		if currentBill.Status != string(model.BillStatusClosed) ||
-			currentBill.Status == string(model.BillStatusAttentionRequired) {
-			return &errs.Error{
-				Code:    errs.InvalidArgument,
-				Message: "bill is already in terminal status",
-			}
-		}
-
-		_, err := sm.billTx.UpdateBillClosure(ctx, bills.UpdateBillClosureParams{
-			ID:           id,
-			Status:       string(model.BillStatusAttentionRequired),
-			CloseReason:  pgtype.Text{Valid: false},
-			ErrorMessage: pgtype.Text{String: errorMessage, Valid: true},
-		})
-		return err
+	_, err := sm.billTx.UpdateBillClosure(ctx, bills.UpdateBillClosureParams{
+		ID:           id,
+		Status:       string(model.BillStatusAttentionRequired),
+		CloseReason:  pgtype.Text{Valid: false},
+		ErrorMessage: pgtype.Text{String: errorMessage, Valid: true},
 	})
+	return err
 }
 
 // GetBillWithLock performs any operation with proper row-level locking and transaction management
