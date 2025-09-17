@@ -606,8 +606,10 @@ Response:
 
 **Install Encore:**
 - **macOS:** `brew install encoredev/tap/encore`
+
 **Install Temporal**
 - **macOS:** `brew install temporal`
+
 **Install sqlc**
 - **macOS:** `brew install sqlc`
 
@@ -625,6 +627,8 @@ Run this command from your application's root folder:
 ```bash
 temporal server start-dev
 ```
+
+- Start Encore Server
 
 ```bash
 encore run
