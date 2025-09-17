@@ -220,7 +220,13 @@ The `currencies` table acts as a reference for all supported currencies within
 
 ![Idempotency Sequence.png](docs/idempotency_sequence.png)
 
-Note: In a real-world scenario, the idempotency middleware would require distributed locking to prevent race conditions. For simplicity, distributed lock implementation was intentionally omitted, so this middleware only handles sequential duplicate requests correctly.
+**Implementation Notes:**
+- In a real-world scenario, the idempotency middleware would require distributed locking to prevent race conditions. For simplicity, distributed lock implementation was intentionally omitted, so this middleware only handles sequential duplicate requests correctly.
+- **MD5 Hashing Rationale**: The middleware uses MD5 for request body hashing, which is appropriate for this use case because:
+  - This is **not a cryptographic security operation** - we're only detecting if request bodies are identical
+  - MD5 provides excellent performance for high-frequency idempotency checks
+  - Even in the extremely rare case of MD5 collisions, the worst outcome is treating different requests as duplicates, which would be caught by business logic validation
+  - We're hashing structured JSON data in a controlled environment, not arbitrary content where collision attacks are feasible
 
 ### API Layer - Encore Service
 

@@ -199,7 +199,16 @@ func markAsCompleted(ctx context.Context, cacheKey model.IdempotencyKey, bodyHas
 	rlog.Debug("Request completed and response cached", "key", idempotencyKey)
 }
 
-// hashing creates a stable hash of the JSON request body
+// hashing creates a stable hash of the JSON request body for idempotency conflict detection.
+//
+// Note: MD5 is intentionally used here instead of SHA-256 because:
+// 1. This is NOT a cryptographic security use case - we're only detecting identical request bodies
+// 2. Even if MD5 collisions occurred (extremely rare), the worst case is treating different
+//    requests as identical, which would be caught by business logic validation
+// 3. MD5 is significantly faster than SHA-256 for this high-frequency operation
+// 4. We're hashing structured JSON data, not arbitrary content where collision attacks are feasible
+//
+// This is a performance optimization for a non-security-critical comparison operation.
 func hashing(body []byte) string {
 	if len(body) == 0 {
 		return ""
