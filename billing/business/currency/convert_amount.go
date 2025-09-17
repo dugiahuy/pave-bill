@@ -2,7 +2,8 @@ package currency
 
 import (
 	"context"
-	"math"
+
+	"github.com/shopspring/decimal"
 
 	"encore.app/billing/model"
 )
@@ -25,16 +26,28 @@ func (s *business) ConvertAmount(ctx context.Context, fromCurrency, toCurrency s
 		return nil, err
 	}
 
+	// Use decimal arithmetic for precise financial calculations
 	// amount_in_from_currency / from_rate * to_rate
-	exchangeRate := toCurr.Rate / fromCurr.Rate
-	convertedAmount := int64(math.Round(float64(amountCents) * exchangeRate))
+	amount := decimal.NewFromInt(amountCents)
+	fromRate := decimal.NewFromFloat(fromCurr.Rate)
+	toRate := decimal.NewFromFloat(toCurr.Rate)
+
+	// Calculate exchange rate: to_rate / from_rate
+	exchangeRate := toRate.Div(fromRate)
+
+	// Convert amount with proper rounding
+	convertedDecimal := amount.Mul(exchangeRate).Round(0)
+	convertedAmount := convertedDecimal.IntPart()
+
+	// Store exchange rate as float64 for compatibility with existing metadata structure
+	exchangeRateFloat, _ := exchangeRate.Float64()
 
 	return &model.ConversionResult{
 		ConvertedAmount: convertedAmount,
 		Metadata: &model.CurrencyMetadata{
 			OriginalAmountCents: amountCents,
 			OriginalCurrency:    fromCurrency,
-			ExchangeRate:        exchangeRate,
+			ExchangeRate:        exchangeRateFloat,
 		},
 	}, nil
 }

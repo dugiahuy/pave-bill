@@ -7,6 +7,7 @@ require (
 	github.com/go-playground/validator/v10 v10.11.0
 	github.com/jackc/pgerrcode v0.0.0-20240316143900-6e2875d9b438
 	github.com/jackc/pgx/v5 v5.7.5
+	github.com/shopspring/decimal v1.4.0
 	github.com/stretchr/testify v1.10.0
 	go.temporal.io/sdk v1.36.0
 	go.uber.org/mock v0.6.0
