@@ -148,7 +148,7 @@ In the scope of homework, I choose to have minimal line item. The line item coul
 
 ## Database Model
 
-![Pave Bill DB tables.png](docs/Pave_Bill_DB_table.png)
+![PaveBill DB table.png](docs/PaveBill_DB_table.png)
 
 ### Bills table
 
