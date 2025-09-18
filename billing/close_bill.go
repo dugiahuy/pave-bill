@@ -35,14 +35,10 @@ func (s *Service) CloseBill(ctx context.Context, id int32, req *CloseBillRequest
 		return nil, err
 	}
 
-	// Terminate workflow asynchronously to stop it completely - don't block the response
-	go func() {
-		terminateCtx := context.Background()
-		err := s.terminateWorkflow(terminateCtx, *bill.WorkflowID, "manual_close_via_api")
-		if err != nil {
-			rlog.Error("failed to terminate workflow", "error", err, "workflow_id", bill.WorkflowID, "bill_id", id)
-		}
-	}()
+	// Terminate workflow asynchronously with supervision (overridable in tests)
+	runAsync("terminate_workflow", func(ctx context.Context) error {
+		return s.terminateWorkflow(ctx, *bill.WorkflowID, "manual_close_via_api")
+	})
 
 	return &CloseBillResponse{
 		Bill: *bill,

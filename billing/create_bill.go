@@ -8,6 +8,7 @@ import (
 	"encore.dev/beta/errs"
 	"encore.dev/rlog"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/temporal"
 
 	"encore.app/billing/model"
 	"encore.app/billing/workflow"
@@ -42,11 +43,9 @@ func (s *Service) CreateBill(ctx context.Context, req *CreateBillRequest) (*Bill
 	}
 
 	// Start Temporal workflow for bill lifecycle management
-	err = s.startBillingWorkflow(ctx, result)
-	if err != nil {
-		rlog.Error("failed to start billing workflow", "error", err, "bill_id", result.ID)
-		// Don't fail the bill creation, but log the error
-		// The workflow can be started manually later if needed
+	if wfErr := s.startBillingWorkflow(ctx, result); wfErr != nil {
+		// We intentionally do not fail the overall request, but we emit structured context
+		rlog.Error("workflow start issue", "bill_id", result.ID, "workflow_id", fmt.Sprintf("bill-%s", result.IdempotencyKey), "error", wfErr)
 	}
 
 	return &BillResponse{
@@ -98,5 +97,13 @@ func (s *Service) startBillingWorkflow(ctx context.Context, bill *model.Bill) er
 	}
 
 	_, err := s.temporal.ExecuteWorkflow(ctx, options, workflow.BillingPeriod, params)
-	return err
+	if err != nil {
+		// Distinguish AlreadyStarted (benign) vs real failure
+		if temporal.IsWorkflowExecutionAlreadyStartedError(err) {
+			rlog.Info("workflow already started", "bill_id", bill.ID, "workflow_id", workflowID)
+			return nil
+		}
+		return fmt.Errorf("execute workflow %s: %w", workflowID, err)
+	}
+	return nil
 }

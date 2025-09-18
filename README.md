@@ -639,3 +639,22 @@ temporal server start-dev
 ```bash
 encore run
 ```
+
+## Testing
+
+The project includes both unit tests and integration tests for comprehensive coverage.
+
+### Unit Tests
+Run unit tests (fast, no database required):
+```bash
+make test
+# or
+encore test ./... -v
+```
+
+### Test Coverage
+Generate coverage report:
+```bash
+make test-coverage
+```
+

@@ -46,14 +46,10 @@ func (s *Service) AddLineItem(ctx context.Context, id int32, req *CreateLineItem
 		return nil, err
 	}
 
-	// Signal workflow asynchronously - don't block the response
-	go func() {
-		signalCtx := context.Background()
-		err := s.signalAddLineItem(signalCtx, result.BillWorkflowID, result.ID)
-		if err != nil {
-			rlog.Error("failed to signal workflow", "error", err, "workflow_id", result.BillWorkflowID, "line_item_id", result.ID)
-		}
-	}()
+	// Signal workflow asynchronously with supervision (overridable in tests)
+	runAsync("signal_add_line_item", func(ctx context.Context) error {
+		return s.signalAddLineItem(ctx, result.BillWorkflowID, result.ID)
+	})
 
 	return &LineItemResponse{
 		LineItem: *result,

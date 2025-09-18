@@ -39,11 +39,12 @@ generate-mocks:
 
 # Run all tests
 test:
-	go test ./... -v
+	encore test ./... -v
+
 
 # Run tests with coverage
 test-coverage:
-	go test ./... -coverprofile=coverage.out
+	encore test ./... -coverprofile=coverage.out
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 

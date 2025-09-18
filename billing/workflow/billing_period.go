@@ -3,6 +3,7 @@ package workflow
 import (
 	"time"
 
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -103,9 +104,14 @@ func BillingPeriod(ctx workflow.Context, params BillingPeriodWorkflowParams) err
 func closeBill(ctx workflow.Context, billID int32, reason string) error {
 	activityOptions := workflow.ActivityOptions{
 		StartToCloseTimeout: time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    2 * time.Second,
+			BackoffCoefficient: 2.0,
+			MaximumInterval:    15 * time.Second,
+			MaximumAttempts:    6,
+		},
 	}
 	activityCtx := workflow.WithActivityOptions(ctx, activityOptions)
-
 	return workflow.ExecuteActivity(activityCtx, CloseBillActivity, billID, reason).Get(ctx, nil)
 }
 
@@ -113,18 +119,28 @@ func closeBill(ctx workflow.Context, billID int32, reason string) error {
 func activateBill(ctx workflow.Context, billID int32) error {
 	activityOptions := workflow.ActivityOptions{
 		StartToCloseTimeout: time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    1 * time.Second,
+			BackoffCoefficient: 2.0,
+			MaximumInterval:    10 * time.Second,
+			MaximumAttempts:    5,
+		},
 	}
 	activityCtx := workflow.WithActivityOptions(ctx, activityOptions)
-
 	return workflow.ExecuteActivity(activityCtx, ActivateBillActivity, billID).Get(ctx, nil)
 }
 
 // updateBillTotal executes the UpdateBillTotal activity to recalculate totals
 func updateBillTotal(ctx workflow.Context, billID int32) error {
 	activityOptions := workflow.ActivityOptions{
-		StartToCloseTimeout: time.Minute,
+		StartToCloseTimeout: 30 * time.Second,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    500 * time.Millisecond,
+			BackoffCoefficient: 2.0,
+			MaximumInterval:    5 * time.Second,
+			MaximumAttempts:    4,
+		},
 	}
 	activityCtx := workflow.WithActivityOptions(ctx, activityOptions)
-
 	return workflow.ExecuteActivity(activityCtx, UpdateBillTotalActivity, billID).Get(ctx, nil)
 }

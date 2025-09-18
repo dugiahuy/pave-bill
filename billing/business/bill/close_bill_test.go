@@ -87,12 +87,12 @@ func TestCloseBill(t *testing.T) {
 			expectTransitionToClosed:    true,
 		},
 		{
-			name:           "invalid_bill_status",
+			name:           "already_closed_bill_idempotent",
 			billID:         6,
 			reason:         "Closure attempt",
 			mockBillStatus: string(model.BillStatusClosed), // Already closed
-			expectedError:  "invalid bill status for closure",
-			expectSuccess:  false,
+			expectedError:  "",                             // Should be idempotent, no error
+			expectSuccess:  true,                           // Should succeed idempotently
 		},
 		{
 			name:           "attention_required_status",

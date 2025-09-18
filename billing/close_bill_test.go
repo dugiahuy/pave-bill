@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"go.temporal.io/sdk/mocks"
 	"go.uber.org/mock/gomock"
 
@@ -15,16 +16,6 @@ import (
 )
 
 func TestCloseBill(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockBusiness := bill_business.NewMockBusiness(ctrl)
-	mockTemporal := mocks.NewClient(t)
-
-	service := &Service{
-		business: mockBusiness,
-		temporal: mockTemporal,
-	}
 
 	testCases := []struct {
 		name                string
@@ -50,6 +41,7 @@ func TestCloseBill(t *testing.T) {
 				Currency:    "USD",
 				Status:      model.BillStatusClosed,
 				CloseReason: stringPtr("Customer requested closure"),
+				WorkflowID:  stringPtr("bill-test-workflow-1"),
 			},
 			mockGetBillError:    nil,
 			expectSuccess:       true,
@@ -139,6 +131,7 @@ func TestCloseBill(t *testing.T) {
 				Currency:    "EUR",
 				Status:      model.BillStatusClosed,
 				CloseReason: stringPtr("This is a very long reason for closing the bill that might test the validation and storage capabilities of our system"),
+				WorkflowID:  stringPtr("bill-test-workflow-6"),
 			},
 			mockGetBillError:    nil,
 			expectSuccess:       true,
@@ -149,7 +142,18 @@ func TestCloseBill(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Set up business mock expectations for CloseBill
+			// Override async to run synchronously for deterministic test
+			originalRunAsync := runAsync
+			runAsync = func(op string, fn func(ctx context.Context) error) { _ = fn(context.Background()) }
+			defer func() { runAsync = originalRunAsync }()
+
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			mockBusiness := bill_business.NewMockBusiness(ctrl)
+			mockTemporal := mocks.NewClient(t)
+
+			service := &Service{business: mockBusiness, temporal: mockTemporal}
+
 			if tc.expectCloseBillCall {
 				mockBusiness.EXPECT().
 					CloseBill(gomock.Any(), tc.billID, tc.request.Reason).
@@ -157,7 +161,6 @@ func TestCloseBill(t *testing.T) {
 					Times(1)
 			}
 
-			// Set up business mock expectations for GetBill
 			if tc.expectGetBillCall {
 				mockBusiness.EXPECT().
 					GetBill(gomock.Any(), tc.billID).
@@ -165,10 +168,13 @@ func TestCloseBill(t *testing.T) {
 					Times(1)
 			}
 
-			// Execute the API call
+			if tc.expectSuccess {
+				// Only successful path triggers workflow termination
+				mockTemporal.On("TerminateWorkflow", mock.Anything, *tc.mockGetBillReturn.WorkflowID, "", "manual_close_via_api").Return(nil).Once()
+			}
+
 			response, err := service.CloseBill(context.Background(), tc.billID, tc.request)
 
-			// Verify results
 			if tc.expectedError != "" {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tc.expectedError)
@@ -176,7 +182,6 @@ func TestCloseBill(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, response)
-
 				if tc.expectSuccess {
 					assert.Equal(t, tc.mockGetBillReturn.ID, response.Bill.ID)
 					assert.Equal(t, tc.mockGetBillReturn.Currency, response.Bill.Currency)
@@ -184,6 +189,7 @@ func TestCloseBill(t *testing.T) {
 					if tc.mockGetBillReturn.CloseReason != nil {
 						assert.Equal(t, *tc.mockGetBillReturn.CloseReason, *response.Bill.CloseReason)
 					}
+					mockTemporal.AssertExpectations(t)
 				}
 			}
 		})
