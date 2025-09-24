@@ -10,7 +10,7 @@ endif
 
 MOCKGEN ?= $(shell command -v mockgen 2> /dev/null)
 
-.PHONY: help install-tools generate-mocks test test-coverage clean
+.PHONY: help install-tools generate-mocks test test-coverage clean test-scripts test-scripts-legacy
 
 help:
 	@echo "Available targets:"
@@ -18,6 +18,8 @@ help:
 	@echo "  generate-mocks   - Generate all mock files"
 	@echo "  test            - Run all tests"
 	@echo "  test-coverage   - Run tests with coverage"
+	@echo "  test-scripts    - Run comprehensive automated API test suite (service must be running on :4000)"
+	@echo "  test-scripts-legacy - Run individual test scripts (legacy, for backward compatibility)"
 	@echo "  clean           - Clean generated files"
 
 install-tools:
@@ -47,6 +49,22 @@ test-coverage:
 	encore test ./... -coverprofile=coverage.out
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
+
+# Run comprehensive automated API test suite (service must be already running)
+test-scripts:
+	@test -f test_commands/run_all_tests.sh || (echo "test_commands/run_all_tests.sh missing" && exit 1)
+	@test -x test_commands/run_all_tests.sh || chmod +x test_commands/run_all_tests.sh
+	@echo "🚀 Running comprehensive automated API test suite..."
+	@cd test_commands && ./run_all_tests.sh
+
+# Legacy individual test scripts (for backward compatibility)
+test-scripts-legacy:
+	@test -f test_commands/lib.sh || (echo "test_commands/lib.sh missing" && exit 1)
+	@echo "⚠️  Running legacy individual test scripts (requires manual input)"
+	@echo "Running create bill script" && bash test_commands/01_create_bill.sh
+	@echo "Running add line items script" && bash test_commands/02_add_line_items.sh
+	@echo "Running idempotency script" && bash test_commands/04_idempotency_test.sh
+	@echo "All legacy script tests completed"
 
 # Clean generated files
 clean:

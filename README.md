@@ -4,6 +4,176 @@ Created by: Huy Du <br/>
 Created time: August 27, 2025 9:45 PM<br/>
 Last updated time: September 16, 2025 9:47 PM<br/>
 
+## Testing
+
+The project provides multiple layers of tests to validate behavior:
+
+| Layer | Command | Purpose |
+|-------|---------|---------|
+| Unit & workflow | `make test` | Go unit tests + Temporal workflow tests via `encore test` |
+| Coverage | `make test-coverage` | Generates `coverage.html` |
+| **Complete Test Suite** | `./test_commands/run_all_tests.sh` | **🚀 Automated comprehensive API testing** |
+| Individual API tests | Various scripts in `test_commands/` | Manual testing of specific features |
+
+### 🎯 **For Reviewers: Complete Test Suite**
+
+**⚡ Quick Start (Recommended)**
+```bash
+# Start the service (in one terminal)
+encore run
+
+# Run all tests (in another terminal)
+./test_commands/run_all_tests.sh
+```
+
+This runs a **comprehensive automated test suite** that covers:
+- ✅ Bill creation and idempotency
+- ✅ Line item addition with currency conversion
+- ✅ Complete end-to-end billing flow
+- ✅ Concurrent operations and race conditions
+- ✅ Error handling and validation
+
+**Expected Output**: All tests should pass with green `[PASS]` messages and a final summary.
+
+---
+
+### 📋 Individual Test Scripts
+
+All test scripts are fully automated and self-contained (no manual input required):
+
+| Script | Description | What It Tests |
+|--------|-------------|---------------|
+| **`run_all_tests.sh`** | **Complete automated test suite** | **All features with timing and pass/fail tracking** |
+| `01_create_bill.sh` | Interactive bill creation | Manual bill creation workflow (requires user input) |
+| `02_add_line_items.sh` | Add line items to existing bill | Currency conversion, validation (requires bill ID) |
+| `03_race_condition_test.sh` | Race condition testing | Concurrent line item additions (requires bill ID) |
+| `04_idempotency_test.sh` | **Idempotency validation** | **Duplicate request handling with same idempotency key** |
+| `05_error_tests.sh` | **Error handling validation** | **API validation, missing headers, invalid data** |
+| `06_complete_flow.sh` | **End-to-end billing flow** | **Create → Add Items → Check Status → Close bill** |
+| `07_concurrency_test.sh` | **Concurrent operations** | **Race conditions, database locking, timeout handling** |
+
+### 🔍 **Detailed Test Descriptions**
+
+#### **Core Automated Tests** (run by `run_all_tests.sh`)
+
+**1. Idempotency Test (`04_idempotency_test.sh`)**
+- Tests that duplicate API calls with same idempotency key return the same bill ID
+- Validates that the system prevents duplicate bill creation
+- **Expected**: Second call returns same bill ID as first call
+
+**2. Error Handling Tests (`05_error_tests.sh`)**
+- Tests various error conditions and API validation:
+  - Invalid bill ID (404 error)
+  - Missing idempotency key (400 error)
+  - Invalid currency (400 error)
+  - End time before start time (400 error)
+  - Start time in the past (400 error)
+- **Expected**: All tests return appropriate 4xx HTTP status codes
+
+**3. Complete End-to-End Flow (`06_complete_flow.sh`)**
+- Full billing lifecycle test:
+  1. Creates active bill (USD currency, immediate start)
+  2. Adds 5 line items (5000, 3000, 2000, 1500, 1000 cents = 12500 total)
+  3. Fetches bill status and verifies total amount matches
+  4. Closes the bill and verifies closure
+- **Expected**: Total amount = 12500 cents, bill successfully closed
+
+**4. Concurrency Tests (`07_concurrency_test.sh`)**
+- Creates fresh bills for each test to avoid state conflicts
+- Test 1: Concurrent AddLineItem vs CloseBill operations
+- Test 2: Rapid-fire concurrent operations (5 simultaneous requests)
+- **Expected**: Proper handling of race conditions, timeout errors, or logical errors
+
+#### **Interactive Tests** (require manual input)
+
+**5. Create Bill (`01_create_bill.sh`)**
+- Interactive bill creation with user input for currency
+- Demonstrates manual workflow
+- **Usage**: `./01_create_bill.sh` (follow prompts)
+
+**6. Add Line Items (`02_add_line_items.sh`)**
+- Adds line items with different currencies to existing bill
+- Tests currency conversion (GEL→USD, JPY→USD, EUR→USD)
+- **Usage**: `./02_add_line_items.sh <bill_id>`
+
+**7. Race Condition Test (`03_race_condition_test.sh`)**
+- Tests concurrent line item additions to same bill
+- **Usage**: `./03_race_condition_test.sh <bill_id>`
+
+### 🛠 **Running Individual Tests**
+
+```bash
+# Automated tests (no input required)
+./test_commands/04_idempotency_test.sh
+./test_commands/05_error_tests.sh
+./test_commands/06_complete_flow.sh
+./test_commands/07_concurrency_test.sh
+
+# Interactive tests (require input)
+./test_commands/01_create_bill.sh
+./test_commands/02_add_line_items.sh <bill_id>
+./test_commands/03_race_condition_test.sh <bill_id>
+```
+
+### 🔧 **Technical Implementation**
+
+**Test Infrastructure**:
+- `lib.sh`: Shared utilities for API calls, JSON parsing, assertions
+- All tests use `jq` for JSON processing and validation
+- Proper error handling with meaningful failure messages
+- HTTP status code validation
+- Response time tracking in comprehensive suite
+
+**API Testing Patterns**:
+1. **Idempotency**: Every state-changing request uses unique idempotency keys
+2. **Assertions**: `assert_json`, `assert_nonempty`, `assert_status` for validation
+3. **Currency Conversion**: Tests multi-currency line items with USD bills
+4. **Race Conditions**: Concurrent operations with timeout and lock testing
+5. **Error Scenarios**: Comprehensive validation error testing
+
+### 📊 **Expected Test Results**
+
+When running `./test_commands/run_all_tests.sh`, you should see:
+
+```
+===============================================
+           BILLING SERVICE TEST SUITE
+===============================================
+🚀 Running comprehensive automated tests
+
+TEST 1: Idempotency Test
+[PASS] Idempotency verified (bill id reused)
+
+TEST 2: Error Handling Tests
+[PASS] All error tests returned expected 4xx status codes
+
+TEST 3: Complete End-to-End Flow
+[PASS] Bill created, items added, total verified, bill closed
+
+TEST 4: Concurrency Tests
+[PASS] Concurrent operations handled correctly
+
+📊 Tests run: 4
+✅ Tests passed: 4
+❌ Tests failed: 0
+🎉 All tests passed!
+```
+
+### 🚨 **Troubleshooting**
+
+**Common Issues**:
+- **Service not running**: Ensure `encore run` is active on port 4000
+- **Date/timezone errors**: Tests use UTC timestamps and may fail with incorrect system time
+- **Permission errors**: Ensure test scripts are executable (`chmod +x test_commands/*.sh`)
+- **Missing dependencies**: Tests require `curl`, `jq`, and `bash`
+
+**Legacy Test Commands** (for backward compatibility):
+```bash
+make test-scripts  # Runs basic scripted tests
+```
+
+---
+
 # Self research about Encore and Temporal
 
 This section is for my self-learning about this new framework and technology. You can skip it into the next section for focusing on the homework.
