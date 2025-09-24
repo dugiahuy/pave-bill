@@ -17,6 +17,14 @@ import (
 
 // CreateBill handles the business logic for creating a new bill with explicit idempotency
 func (b *business) CreateBill(ctx context.Context, bill *model.Bill) (*model.Bill, error) {
+	currency, err := b.currencyService.GetCurrency(ctx, bill.Currency)
+	if err != nil {
+		return nil, err
+	}
+	if !currency.Enabled {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "currency is not enabled"}
+	}
+
 	workflowID := fmt.Sprintf("bill-%s", bill.IdempotencyKey)
 
 	dbBill, err := b.billRepo.CreateBill(ctx, bills.CreateBillParams{
